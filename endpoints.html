@@ -1,0 +1,137 @@
+﻿<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>NCTB Endpoints | Verified API Reference</title>
+  <meta name="description" content="A searchable reference of verified National Curriculum and Textbook Board public endpoints, response contracts, and recursive route data.">
+  <link rel="stylesheet" href="./assets/styles.css">
+</head>
+<body>
+  <a class="skip-link" href="#main">Skip to endpoint explorer</a>
+
+  <header class="site-header">
+    <div class="masthead">
+      <a class="brand" href="#top" aria-label="NCTB Endpoints home">
+        <span class="brand-mark" aria-hidden="true">
+          <svg viewBox="0 0 32 32"><path d="M8 4h13a5 5 0 0 1 5 5v19H10a5 5 0 0 1-5-5V8a4 4 0 0 1 3-4Z"/><path d="M11 10h10M11 15h10M11 20h6"/><path d="M26 28V11l-3 1"/></svg>
+        </span>
+        <span class="brand-text">NCTB <span>Endpoints</span></span>
+      </a>
+      <nav class="header-nav" aria-label="Primary">
+        <a href="#catalog">Catalog</a>
+        <a href="#families">Route families</a>
+        <a href="#workflows">Workflows</a>
+        <a href="./API_Documentation.md" download>Full docs</a>
+        <a href="./endpoints.json" download>Route data</a>
+      </nav>
+    </div>
+  </header>
+
+  <main id="main">
+    <section class="hero" aria-labelledby="hero-title">
+      <div class="hero-copy">
+        <h1 id="hero-title">A verified map of Bangladesh’s public education API surface.</h1>
+        <p>NCTB is a server-rendered National Portal Framework site, not a conventional REST service. This explorer organizes its real HTML routes, AJAX endpoints, widgets, filters, file downloads, and 355 recursively discovered nested pages.</p>
+        <dl class="proof-strip">
+          <div><dt>Verified base URL</dt><dd>nctb.gov.bd</dd></div>
+          <div><dt>Recursive routes</dt><dd>355</dd></div>
+          <div><dt>Catalog entries</dt><dd id="metric-count">—</dd></div>
+          <div><dt>Latest verification</dt><dd>14 Aug 2026</dd></div>
+        </dl>
+      </div>
+      <div class="hero-panel" aria-label="Request preview">
+        <div class="terminal" role="group" aria-label="Example request and response">
+          <span class="terminal-dot" aria-hidden="true"></span>
+          <code>GET</code>
+          <output>https://nctb.gov.bd/ajax/get/division/list</output>
+          <pre id="terminal-body">{
+  "status": "success",
+  "data": [
+    { "id": "1", "name": "চট্টগ্রাম" }
+  ]
+}</pre>
+        </div>
+      </div>
+    </section>
+
+    <section class="controls-section" id="catalog" aria-labelledby="catalog-title">
+      <div class="section-heading">
+        <h2 id="catalog-title">Endpoint catalog</h2>
+        <p>Search paths, descriptions, methods, and route types. Live checks are direct browser requests; CORS failures do not mean an endpoint is unavailable.</p>
+      </div>
+
+      <form class="controls" id="filters" role="search">
+        <label class="search-shell">
+          <span>Search</span>
+          <input id="search" name="search" type="search" placeholder="reports, static-pages, AJAX…" autocomplete="off">
+        </label>
+        <fieldset>
+          <legend>Route type</legend>
+          <label><input type="radio" name="type" value="all" checked><span>All</span></label>
+          <label><input type="radio" name="type" value="HTML"><span>HTML</span></label>
+          <label><input type="radio" name="type" value="JSON"><span>JSON</span></label>
+          <label><input type="radio" name="type" value="FILE"><span>Files</span></label>
+          <label><input type="radio" name="type" value="PATTERN"><span>Patterns</span></label>
+        </fieldset>
+      </form>
+
+      <div class="results-meta" aria-live="polite">
+        <p id="result-count">Loading endpoint catalog…</p>
+        <button class="ghost-button" type="button" id="clear">Clear filters</button>
+      </div>
+      <div class="table-wrap">
+        <table>
+          <caption class="visually-hidden">Verified NCTB endpoint catalog</caption>
+          <thead>
+            <tr><th scope="col">Method</th><th scope="col">Endpoint</th><th scope="col">Type</th><th scope="col">Contract</th><th scope="col">Actions</th></tr>
+          </thead>
+          <tbody id="endpoint-rows"></tbody>
+        </table>
+      </div>
+      <p class="empty-state" id="empty-state" hidden>No endpoints match that filter. Try “pages”, “ajax”, “officer”, or “files”.</p>
+    </section>
+
+    <section class="family-section" id="families" aria-labelledby="families-title">
+      <div class="section-heading">
+        <h2 id="families-title">Five route families that matter</h2>
+        <p>The shared contracts below cover nearly every public route discovered during the investigation.</p>
+      </div>
+      <div class="family-grid">
+        <article><h3>Content collections</h3><p><code>/pages/{collection}</code> returns HTML through <code>DatatableBrowseWidget</code>. Use response links; do not construct slugs.</p></article>
+        <article><h3>Detail records</h3><p><code>/pages/{collection}/{slug}-{shortid}-{objectid}</code> returns a <code>ContentViewerWidget</code>, metadata, body, and attachments.</p></article>
+        <article><h3>File viewers</h3><p><code>/pages/files/{objectid}</code> returns an HTML viewer containing direct Oracle Object Storage URLs.</p></article>
+        <article><h3>AJAX locations</h3><p><code>/ajax/get/division/list</code> is confirmed JSON. Cascading district and upazila routes remain inferred.</p></article>
+        <article><h3>Nested static pages</h3><p>355 unique routes were recursively discovered: 69 roots, 171 children, and 115 grandchildren.</p></article>
+        <article><h3>Widget parsing</h3><p>Parse only the named widget container. The surrounding page shell repeats global links on every route.</p></article>
+      </div>
+    </section>
+
+    <section class="workflow-section" id="workflows" aria-labelledby="workflow-title">
+      <div class="section-heading">
+        <h2 id="workflow-title">Operational workflows</h2>
+        <p>Use these sequences instead of treating object IDs as predictable or derivable.</p>
+      </div>
+      <ol class="workflow-list">
+        <li><strong>Discover:</strong> GET <code>/views/sitemap</code>, then parse <code>SiteMapViewWidget</code>.</li>
+        <li><strong>Filter:</strong> GET a collection with URL-encoded <code>filters</code> JSON and parse returned controls.</li>
+        <li><strong>Detail:</strong> follow the complete response-provided detail URL.</li>
+        <li><strong>Download:</strong> parse the file viewer for its complete object-storage URL.</li>
+        <li><strong>Recrawl:</strong> parse nested <code>ContentViewerWidget</code> links until no new route appears.</li>
+      </ol>
+    </section>
+  </main>
+
+  <footer class="site-footer">
+    <div>
+      <p><strong>Point-in-time verification:</strong> 14 August 2026, Asia/Dhaka.</p>
+      <p>This independent reference describes public observed behavior and is not an official NCTB service.</p>
+    </div>
+    <a class="footer-link" href="https://nctb.gov.bd/">Visit live portal</a>
+  </footer>
+
+  <div class="toast" id="toast" role="status" aria-live="polite"></div>
+  <script src="./assets/app.js"></script>
+</body>
+</html>
+

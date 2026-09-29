@@ -1,0 +1,309 @@
+<!doctype html>
+<html lang="bn">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Reader — The Shelf</title>
+<meta name="description" content="Read NCTB textbooks in the browser — full pages, real page turns, and highlights that stay on your device.">
+<meta name="color-scheme" content="light dark">
+<script>
+  try { var t = localStorage.getItem('atlas:theme'); if (t) document.documentElement.setAttribute('data-theme', t); } catch (e) {}
+</script>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Source+Serif+4:opsz,wght@8..60,400;8..60,600;8..60,700&family=Noto+Serif+Bengali:wght@400;600;700&family=Inter:wght@400;500;600&display=swap">
+<link rel="stylesheet" href="./assets/css/tokens.css">
+<link rel="stylesheet" href="./assets/css/app.css">
+<link rel="stylesheet" href="./assets/css/reader.css">
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='6' fill='%23fdfbf7'/%3E%3Cpath d='M8 7h8a4 4 0 0 1 4 4v14H12a4 4 0 0 1-4-4z' fill='none' stroke='%23a85a07' stroke-width='2.2' stroke-linejoin='round'/%3E%3Cpath d='M12 12h6M12 16h6' stroke='%23a85a07' stroke-width='2.2' stroke-linecap='round'/%3E%3C/svg%3E">
+</head>
+<body class="reader">
+
+<a class="skip-link" href="#stage">Skip to the page</a>
+
+<!-- ══════════ Top bar ══════════ -->
+<header class="topbar" id="topbar">
+  <a class="back" href="./index.html" title="Back to the shelf" aria-label="Back to the shelf">
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M15 6l-6 6 6 6"/></svg>
+  </a>
+
+  <button class="iconbtn" type="button" id="toggle-rail" aria-expanded="false" aria-controls="rail" title="Pages and notes" aria-label="Pages and notes">
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round" aria-hidden="true"><rect x="3.5" y="4.5" width="17" height="15" rx="2"/><path d="M9.5 4.5v15"/></svg>
+  </button>
+
+  <div class="booktitle">
+    <b id="doc-title" class="bn">Reader</b>
+    <span id="doc-sub"></span>
+  </div>
+
+  <div class="topbar-tools">
+    <span class="saved" id="save-state" hidden><span id="save-text">Saved</span></span>
+
+    <div class="seg" role="group" aria-label="View mode" id="view-modes">
+      <button type="button" data-view="single" aria-pressed="true" title="Single page (1)" aria-label="Single page">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round" aria-hidden="true"><rect x="7" y="4" width="10" height="16" rx="1.5"/></svg>
+      </button>
+      <button type="button" data-view="scroll" aria-pressed="false" title="Vertical scroll (2)" aria-label="Vertical scroll">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round" aria-hidden="true"><rect x="6" y="2.5" width="12" height="8" rx="1.5"/><rect x="6" y="13.5" width="12" height="8" rx="1.5"/></svg>
+      </button>
+      <button type="button" data-view="hscroll" aria-pressed="false" title="Horizontal scroll (3)" aria-label="Horizontal scroll">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round" aria-hidden="true"><rect x="2.5" y="6" width="8" height="12" rx="1.5"/><rect x="13.5" y="6" width="8" height="12" rx="1.5"/></svg>
+      </button>
+    </div>
+
+    <button class="fitbtn" type="button" id="fit-cycle" title="Fit: page, width, actual size (0)">Fit page</button>
+
+    <button class="iconbtn" type="button" id="turn-style" title="Page turn: flip or slide (X)" aria-label="Page turn style" aria-pressed="true">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round" aria-hidden="true"><path d="M12 5v15"/><path d="M12 5C9 3.4 6.4 3 4 3v14c2.4 0 5 .4 8 2"/><path d="M12 5c1.7-.9 3.3-1.4 4.9-1.7L20 8.5"/></svg>
+    </button>
+
+    <button class="iconbtn" type="button" id="fullscreen" title="Fullscreen (F)" aria-label="Fullscreen" aria-pressed="false">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 9V4h5M20 9V4h-5M4 15v5h5M20 15v5h-5"/></svg>
+    </button>
+
+    <button class="iconbtn" type="button" data-theme-toggle aria-pressed="false" title="Night reading" aria-label="Night reading">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" aria-hidden="true"><path d="M20 13.5A8 8 0 0 1 10.5 4a8 8 0 1 0 9.5 9.5z"/></svg>
+    </button>
+
+    <button class="btn btn--sm" type="button" id="open-btn">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 15V4M8 8l4-4 4 4"/><path d="M4 15v4h16v-4"/></svg>
+      <span>Open file</span>
+    </button>
+    <input type="file" id="file-input" accept="application/pdf,.pdf" aria-label="Choose a PDF" hidden>
+  </div>
+</header>
+
+<div class="frame">
+
+  <!-- ══════════ Rail ══════════ -->
+  <aside class="rail" id="rail" data-open="false" aria-label="Pages and notes">
+    <div class="rail-tabs" role="tablist">
+      <button role="tab" id="tab-pages" aria-selected="true" aria-controls="panel-pages">Pages</button>
+      <button role="tab" id="tab-marks" aria-selected="false" aria-controls="panel-marks">Notes</button>
+      <button role="tab" id="tab-store" aria-selected="false" aria-controls="panel-store">Storage</button>
+    </div>
+
+    <section class="rail-panel" id="panel-pages" role="tabpanel" aria-labelledby="tab-pages">
+      <ol class="thumbs" id="thumb-list"></ol>
+    </section>
+
+    <section class="rail-panel" id="panel-marks" role="tabpanel" aria-labelledby="tab-marks" hidden>
+      <div class="rail-empty" id="marks-empty">
+        <p>Nothing marked yet.</p>
+        <p class="muted">Pick the highlighter or pen from the toolbar and drag across the page. Everything you add is saved to this browser as you go.</p>
+      </div>
+      <ul class="marks" id="mark-list"></ul>
+    </section>
+
+    <section class="rail-panel" id="panel-store" role="tabpanel" aria-labelledby="tab-store" hidden>
+      <div class="store-block">
+        <h2>This book</h2>
+        <dl class="kv" id="store-doc"></dl>
+        <div class="store-actions">
+          <button class="btn btn--sm" type="button" id="keep-offline">Keep offline</button>
+          <button class="btn btn--sm" type="button" id="export-pdf">Save marked PDF</button>
+        </div>
+        <div class="store-actions">
+          <button class="btn btn--sm" type="button" id="export-json">Export notes</button>
+          <button class="btn btn--sm" type="button" id="import-json">Import notes</button>
+        </div>
+        <div class="store-actions">
+          <button class="btn btn--sm danger" type="button" id="clear-marks">Clear all marks</button>
+          <button class="btn btn--sm danger" type="button" id="forget-doc">Remove book</button>
+        </div>
+      </div>
+      <div class="store-block">
+        <h2>On this device</h2>
+        <p class="muted" id="store-usage">Checking…</p>
+        <ul class="doc-list" id="doc-list"></ul>
+      </div>
+      <p class="muted store-foot">
+        Everything stays in this browser. Nothing is uploaded.
+        <br><button class="owner-link" type="button" id="open-bridge">Site setup</button>
+      </p>
+      <input type="file" id="import-input" accept="application/json,.json" aria-label="Choose an exported notes file" hidden>
+    </section>
+  </aside>
+
+  <!-- ══════════ Stage ══════════ -->
+  <main class="stage" id="stage">
+
+    <!-- click zones for page turning -->
+    <button class="turn turn--prev" id="turn-prev" type="button" aria-label="Previous page" tabindex="-1">
+      <span class="turn-chev" aria-hidden="true">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M15 6l-6 6 6 6"/></svg>
+      </span>
+    </button>
+    <button class="turn turn--next" id="turn-next" type="button" aria-label="Next page" tabindex="-1">
+      <span class="turn-chev" aria-hidden="true">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 6l6 6-6 6"/></svg>
+      </span>
+    </button>
+
+    <!-- the scroller, not the stage, does the scrolling — so the turn zones
+         above stay pinned to the viewport while an enlarged page pans -->
+    <div class="scroller" id="scroller">
+      <div class="deck" id="deck"></div>
+    </div>
+
+    <!-- landing -->
+    <section class="landing" id="landing">
+      <div class="landing-card">
+        <span class="landing-mark" aria-hidden="true">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.3" stroke-linejoin="round"><path d="M4 5.5h7a3 3 0 0 1 3 3V20H7a3 3 0 0 1-3-3z"/><path d="M20 5.5h-3a3 3 0 0 0-3 3V20h6z"/></svg>
+        </span>
+        <h1>Open a book</h1>
+        <p>Choose one from the shelf, or drop any PDF onto this page. A book you open once stays in this browser.</p>
+        <div class="landing-actions">
+          <a class="btn btn--primary" href="./index.html">Browse the shelf</a>
+          <button class="btn" type="button" id="landing-open">Choose a PDF</button>
+        </div>
+      </div>
+      <div class="recent" id="recent-block" hidden>
+        <h2>Recently read</h2>
+        <ul class="recent-list" id="recent-list"></ul>
+      </div>
+    </section>
+
+    <!-- Drive fallback -->
+    <section class="preview" id="preview-mode" hidden>
+      <div class="preview-note">
+        <div id="preview-note-text">
+          <b>You can read this book right here.</b>
+          To highlight and take notes you need the file itself — <b>1</b> then <b>2</b>.
+        </div>
+        <div class="preview-actions">
+          <a class="btn btn--primary btn--sm" id="preview-download" href="#" target="_blank" rel="noopener">1 · Get the file</a>
+          <button class="btn btn--sm" type="button" id="preview-attach">2 · Open it here</button>
+        </div>
+      </div>
+      <iframe id="preview-frame" title="Book preview"></iframe>
+    </section>
+
+    <div class="loading" id="stage-loading" hidden>
+      <span class="spinner"></span>
+      <p id="loading-text">Opening…</p>
+    </div>
+
+    <div class="dropzone" id="drop-overlay" hidden><span>Release to open</span></div>
+  </main>
+</div>
+
+<!-- ══════════ Bottom bar ══════════ -->
+<footer class="bottombar" id="bottombar" hidden>
+  <div class="pager">
+    <button class="iconbtn" type="button" id="prev-page" title="Previous page (←)" aria-label="Previous page">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M15 6l-6 6 6 6"/></svg>
+    </button>
+    <label class="sr-only" for="page-num">Page number</label>
+    <input id="page-num" type="number" min="1" value="1" inputmode="numeric" autocomplete="off">
+    <span class="of" id="page-total">/ 0</span>
+    <button class="iconbtn" type="button" id="next-page" title="Next page (→)" aria-label="Next page">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M9 6l6 6-6 6"/></svg>
+    </button>
+  </div>
+
+  <label class="scrub">
+    <span class="sr-only">Jump to page</span>
+    <input type="range" id="scrubber" min="1" max="1" value="1" step="1">
+  </label>
+
+  <!-- annotation tools -->
+  <div class="tools" role="toolbar" aria-label="Annotation tools">
+    <button class="tool" data-tool="pan" aria-pressed="true" title="Move (V)" aria-label="Move">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round" aria-hidden="true"><path d="m5 3 6.5 16 2-6.5 6.5-2z"/></svg>
+    </button>
+    <button class="tool" data-tool="highlight" aria-pressed="false" title="Highlight (H)" aria-label="Highlight">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 15.5 13 6.5l4.5 4.5-9 9H4z"/><path d="M14 5.5 16.5 3 21 7.5 18.5 10"/></svg>
+    </button>
+    <button class="tool" data-tool="pen" aria-pressed="false" title="Pen (P)" aria-label="Pen">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 21c3-1 4.5-1.5 6-3l9.5-9.5a2.5 2.5 0 0 0-3.5-3.5L5.5 14.5C4 16 3.5 17.5 3 21z"/></svg>
+    </button>
+    <button class="tool" data-tool="rect" aria-pressed="false" title="Box (R)" aria-label="Box">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round" aria-hidden="true"><rect x="4" y="5.5" width="16" height="13" rx="1.5"/></svg>
+    </button>
+    <button class="tool" data-tool="note" aria-pressed="false" title="Note (N)" aria-label="Note">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round" aria-hidden="true"><path d="M4 5h16v10l-5 5H4z"/><path d="M20 15h-5v5"/></svg>
+    </button>
+    <button class="tool" data-tool="text" aria-pressed="false" title="Text (T)" aria-label="Text">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" aria-hidden="true"><path d="M5 6h14M12 6v13M9 19h6"/></svg>
+    </button>
+    <button class="tool" data-tool="erase" aria-pressed="false" title="Erase (E)" aria-label="Erase">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round" aria-hidden="true"><path d="m4 16 7-7 7 7-3.5 3.5H8z"/><path d="M9 21h11"/></svg>
+    </button>
+
+    <span class="tool-div" aria-hidden="true"></span>
+    <div class="swatches" id="swatches" role="radiogroup" aria-label="Colour"></div>
+    <span class="tool-div" aria-hidden="true"></span>
+
+    <button class="tool" type="button" id="bookmark-page" title="Bookmark (B)" aria-label="Bookmark">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round" aria-hidden="true"><path d="M6 3h12v18l-6-4.5L6 21z"/></svg>
+    </button>
+    <button class="tool" type="button" id="undo" title="Undo (Ctrl+Z)" aria-label="Undo">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M9 7 4 12l5 5"/><path d="M4 12h9a6 6 0 0 1 0 12h-1"/></svg>
+    </button>
+  </div>
+
+  <div class="zoomer">
+    <button class="iconbtn" type="button" id="zoom-out" title="Zoom out (−)" aria-label="Zoom out">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><path d="M6 12h12"/></svg>
+    </button>
+    <button class="iconbtn" type="button" id="zoom-in" title="Zoom in (+)" aria-label="Zoom in">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><path d="M12 6v12M6 12h12"/></svg>
+    </button>
+  </div>
+</footer>
+
+<!-- ══════════ Note editor ══════════ -->
+<dialog class="sheet" id="note-dialog" aria-labelledby="note-title">
+  <form method="dialog">
+    <h2 id="note-title">Notes</h2>
+    <label class="sr-only" for="note-text">Note text</label>
+    <textarea id="note-text" rows="5" placeholder="Write anything — it stays on this device."></textarea>
+    <menu>
+      <button class="btn btn--sm danger" value="delete" type="submit">Delete</button>
+      <span class="grow"></span>
+      <button class="btn btn--sm" value="cancel" type="submit">Cancel/button>
+      <button class="btn btn--primary btn--sm" value="save" type="submit">Storage</button>
+    </menu>
+  </form>
+</dialog>
+
+<!-- ══════════ Site setup (owner only) ══════════ -->
+<dialog class="sheet sheet--wide" id="bridge-dialog" aria-labelledby="bridge-title">
+  <header class="sheet-head">
+    <div>
+      <h2 id="bridge-title">Site setup</h2>
+      <p><b>This page is for whoever publishes this site, not for readers.</b>
+         Deploying to Cloudflare Pages, Vercel or Netlify means <code>/api/drive</code> ships with the deploy and nothing here needs touching.</p>
+      <p class="muted" id="bridge-status"></p>
+    </div>
+    <button class="iconbtn" type="button" id="bridge-close" aria-label="Close">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><path d="M6 6l12 12M18 6 6 18"/></svg>
+    </button>
+  </header>
+  <div class="sheet-body">
+    <fieldset class="opt">
+      <legend><label><input type="radio" name="bridge-mode" value="key" checked> <b>Google API key</b></label></legend>
+      <label class="field"><span class="sr-only">Google API key</span>
+        <input type="password" id="bridge-key" placeholder="AIza…" autocomplete="off" spellcheck="false"></label>
+    </fieldset>
+    <fieldset class="opt">
+      <legend><label><input type="radio" name="bridge-mode" value="proxy"> <b>Own proxy</b></label></legend>
+      <label class="field"><span class="sr-only">Proxy URL</span>
+        <input type="url" id="bridge-proxy" placeholder="https://my-worker.workers.dev/?url={url}" autocomplete="off" spellcheck="false"></label>
+    </fieldset>
+    <p class="bridge-result" id="bridge-result" hidden></p>
+  </div>
+  <footer class="sheet-foot">
+    <button class="btn btn--sm danger" type="button" id="bridge-clear">Disconnect</button>
+    <span class="grow"></span>
+    <button class="btn btn--sm" type="button" id="bridge-test">Test</button>
+    <button class="btn btn--primary btn--sm" type="button" id="bridge-save">Test &amp; save</button>
+  </footer>
+</dialog>
+
+<script src="./assets/vendor/pdf.min.js"></script>
+<script type="module" src="./assets/js/reader.js"></script>
+</body>
+</html>

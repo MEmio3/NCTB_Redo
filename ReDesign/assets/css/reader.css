@@ -1,0 +1,977 @@
+/* ==========================================================================
+   NCTB Reader
+
+   Three fixed rows: top bar, stage, bottom bar. Only the stage ever scrolls,
+   and in page mode it does not scroll at all — the page is sized to fit it.
+
+   The page is the brightest object on screen and the only one that casts a
+   shadow. Everything else is paper, ink and a hairline.
+   ========================================================================== */
+
+.reader {
+  height: 100svh;
+  display: grid;
+  grid-template-rows: auto 1fr auto;
+  /* A grid item's automatic minimum size is its content, so without this the
+     horizontal strip of 122 pages stretches the whole shell to ~18000px and
+     every measurement downstream collapses. */
+  grid-template-columns: minmax(0, 1fr);
+  overflow: hidden;
+  background: var(--canvas);
+  font-family: var(--font-sans);
+}
+
+.grow { flex: 1; }
+.muted { color: var(--text-3); font-size: var(--t-xs); line-height: 1.6; }
+
+/* ==========================================================================
+   Buttons shared by the reader chrome
+   ========================================================================== */
+
+.iconbtn {
+  display: grid;
+  place-items: center;
+  width: 2.1rem;
+  height: 2.1rem;
+  flex: none;
+  border: 0;
+  border-radius: var(--r-2);
+  background: none;
+  color: var(--text-2);
+  cursor: pointer;
+  touch-action: manipulation;
+  transition: background var(--d-2), color var(--d-2);
+}
+.iconbtn svg { width: 1.05rem; height: 1.05rem; }
+.iconbtn:hover { background: var(--surface-3); color: var(--text); }
+.iconbtn[aria-pressed="true"] { background: var(--accent-soft); color: var(--accent); }
+
+.owner-link {
+  border: 0; padding: 0; background: none;
+  color: var(--text-3);
+  font: inherit;
+  font-size: var(--t-micro);
+  text-decoration: underline;
+  text-underline-offset: 2px;
+  cursor: pointer;
+}
+.owner-link:hover { color: var(--text-1); }
+
+.btn.danger { color: var(--bad); border-color: color-mix(in oklab, var(--bad) 30%, var(--line)); }
+.btn.danger:hover { background: color-mix(in oklab, var(--bad) 8%, transparent); }
+
+/* ==========================================================================
+   Top bar
+   ========================================================================== */
+
+.topbar {
+  display: flex;
+  align-items: center;
+  gap: var(--s-2);
+  padding: var(--s-2) var(--s-3);
+  padding-top: max(var(--s-2), env(safe-area-inset-top));
+  background: var(--surface);
+  border-bottom: 1px solid var(--line);
+  z-index: 30;
+}
+
+.back {
+  display: grid;
+  place-items: center;
+  width: 2.1rem; height: 2.1rem;
+  flex: none;
+  border-radius: var(--r-2);
+  color: var(--text-2);
+  transition: background var(--d-2), color var(--d-2);
+}
+.back svg { width: 1.15rem; height: 1.15rem; }
+.back:hover { background: var(--surface-3); color: var(--text); }
+
+.booktitle {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  line-height: 1.25;
+  padding-inline: var(--s-2);
+}
+.booktitle b {
+  font-family: var(--font-bn);
+  font-size: var(--t-sm);
+  font-weight: 600;
+  color: var(--text);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.booktitle span {
+  font-size: var(--t-micro);
+  color: var(--text-3);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.topbar-tools { display: flex; align-items: center; gap: var(--s-2); flex: none; }
+
+.saved {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35em;
+  font-size: var(--t-micro);
+  color: var(--text-3);
+  white-space: nowrap;
+}
+.saved::before {
+  content: "";
+  width: 0.4rem; height: 0.4rem;
+  border-radius: 50%;
+  background: var(--ok);
+}
+
+/* Segmented view-mode switch */
+.seg {
+  display: inline-flex;
+  gap: 1px;
+  padding: 2px;
+  border: 1px solid var(--line);
+  border-radius: var(--r-2);
+  background: var(--surface-2);
+}
+.seg button {
+  display: grid;
+  place-items: center;
+  width: 1.85rem; height: 1.7rem;
+  border: 0;
+  border-radius: var(--r-1);
+  background: none;
+  color: var(--text-3);
+  cursor: pointer;
+  touch-action: manipulation;
+  transition: background var(--d-2), color var(--d-2);
+}
+.seg button svg { width: 0.95rem; height: 0.95rem; }
+.seg button:hover { color: var(--text); }
+.seg button[aria-pressed="true"] { background: var(--surface); color: var(--accent); box-shadow: var(--shadow-1); }
+
+@media (max-width: 860px) {
+  .booktitle span { display: none; }
+  .topbar-tools .btn span { display: none; }
+  .saved { display: none; }
+}
+@media (max-width: 640px) {
+  .seg { display: none; }
+}
+
+/* ==========================================================================
+   Frame + rail
+   ========================================================================== */
+
+.frame { display: flex; min-height: 0; min-width: 0; position: relative; }
+
+.rail {
+  width: 17.5rem;
+  flex: none;
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  background: var(--surface);
+  border-inline-end: 1px solid var(--line);
+  transition: margin-inline-start var(--d-3) var(--ease-out);
+}
+.rail[data-open="false"] { margin-inline-start: -17.5rem; }
+
+.rail-tabs { display: flex; gap: 1px; padding: var(--s-2); border-bottom: 1px solid var(--line-soft); flex: none; }
+.rail-tabs button {
+  flex: 1;
+  padding: 0.4rem;
+  border: 0;
+  border-radius: var(--r-2);
+  background: none;
+  font-family: var(--font-bn);
+  font-size: var(--t-xs);
+  font-weight: 600;
+  color: var(--text-3);
+  cursor: pointer;
+  transition: background var(--d-2), color var(--d-2);
+}
+.rail-tabs button:hover { color: var(--text); background: var(--surface-2); }
+.rail-tabs button[aria-selected="true"] { background: var(--accent-soft); color: var(--accent); }
+
+.rail-panel { flex: 1; min-height: 0; overflow-y: auto; overscroll-behavior: contain; padding: var(--s-3); }
+.rail-empty { padding: var(--s-5) var(--s-2); text-align: center; }
+.rail-empty p { font-family: var(--font-bn); font-size: var(--t-sm); color: var(--text-1); }
+.rail-empty .muted { margin-top: var(--s-2); }
+
+/* Thumbnails */
+.thumbs { list-style: none; padding: 0; margin: 0; display: grid; grid-template-columns: 1fr 1fr; gap: var(--s-2); }
+.thumb {
+  position: relative;
+  display: block;
+  width: 100%;
+  padding: 0;
+  aspect-ratio: 3 / 4;
+  border: 1px solid var(--line);
+  border-radius: var(--r-1);
+  background: var(--paper-000);
+  cursor: pointer;
+  overflow: hidden;
+  touch-action: manipulation;
+  transition: border-color var(--d-2), box-shadow var(--d-2);
+}
+.thumb canvas { width: 100%; height: 100%; object-fit: contain; }
+.thumb:hover { border-color: var(--line-strong); }
+.thumb[data-current="true"] { border-color: var(--accent); box-shadow: 0 0 0 2px var(--accent-soft); }
+.thumb-n {
+  position: absolute;
+  inset-block-end: 0; inset-inline-end: 0;
+  padding: 0 0.4em;
+  background: color-mix(in oklab, var(--ink-900) 78%, transparent);
+  color: #fff;
+  font-size: var(--t-micro);
+  font-variant-numeric: tabular-nums;
+  border-start-start-radius: var(--r-1);
+}
+.thumb-flag { position: absolute; inset-block-start: 3px; inset-inline-start: 3px; font-size: 0.66rem; line-height: 1; }
+
+/* Marks list */
+.marks { list-style: none; padding: 0; margin: 0; display: grid; gap: var(--s-2); }
+.mark-item {
+  display: grid;
+  grid-template-columns: auto 1fr auto;
+  align-items: center;
+  gap: var(--s-2);
+  width: 100%;
+  padding: var(--s-2);
+  border: 1px solid var(--line-soft);
+  border-radius: var(--r-2);
+  background: var(--surface-2);
+  text-align: start;
+  cursor: pointer;
+  transition: border-color var(--d-2), background var(--d-2);
+}
+.mark-item:hover { border-color: var(--accent-line); background: var(--surface); }
+.mark-swatch { width: 0.55rem; height: 1.4rem; border-radius: 2px; background: var(--c, var(--accent)); }
+.mark-body { min-width: 0; }
+.mark-body b { display: block; font-size: var(--t-xs); font-weight: 600; color: var(--text-1); }
+.mark-body span {
+  display: block;
+  font-family: var(--font-bn);
+  font-size: var(--t-micro);
+  color: var(--text-3);
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+}
+.mark-del {
+  border: 0; background: none; padding: 0.2rem;
+  color: var(--text-3); cursor: pointer; line-height: 1; border-radius: var(--r-1);
+}
+.mark-del:hover { color: var(--bad); background: color-mix(in oklab, var(--bad) 10%, transparent); }
+
+/* Storage panel */
+.store-block { padding-bottom: var(--s-4); margin-bottom: var(--s-4); border-bottom: 1px solid var(--line-soft); }
+.store-block h2 { font-size: var(--t-sm); margin-bottom: var(--s-3); }
+.kv { display: grid; grid-template-columns: auto 1fr; gap: 0.3rem var(--s-3); font-size: var(--t-xs); margin-bottom: var(--s-3); }
+.kv dt { color: var(--text-3); }
+.kv dd { margin: 0; color: var(--text-1); word-break: break-word; }
+.store-actions { display: flex; flex-wrap: wrap; gap: var(--s-2); margin-bottom: var(--s-2); }
+.store-foot { margin-top: var(--s-3); }
+.doc-list { list-style: none; padding: 0; display: grid; gap: var(--s-1); margin-top: var(--s-2); }
+.doc-list li {
+  display: flex; align-items: center; gap: var(--s-2);
+  padding: var(--s-2); border-radius: var(--r-1);
+  background: var(--surface-2); font-size: var(--t-xs);
+}
+.doc-list a { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-family: var(--font-bn); }
+.doc-list a:hover { color: var(--accent); }
+
+@media (max-width: 860px) {
+  .rail { position: absolute; inset-block: 0; inset-inline-start: 0; z-index: 25; box-shadow: var(--shadow-3); }
+}
+
+/* ==========================================================================
+   Stage
+   ========================================================================== */
+
+.stage {
+  flex: 1;
+  min-width: 0;
+  min-height: 0;
+  position: relative;
+  display: flex;
+  overflow: hidden;          /* the scroller inside handles overflow */
+  background: var(--canvas);
+}
+
+.scroller {
+  flex: 1;
+  min-width: 0;
+  min-height: 0;
+  display: flex;
+  overflow: auto;
+  overscroll-behavior: contain;
+}
+
+/* `margin: auto` centres the deck while it fits and, unlike a centred grid,
+   never puts the top of an oversized page out of scroll reach. */
+.deck {
+  position: relative;          /* containing block for a turning sheet */
+  margin: auto;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: var(--s-4);
+  padding: var(--s-4);
+}
+
+/* Continuous vertical: one column, scrolled by the same element. */
+.reader[data-view="scroll"] .scroller {
+  scroll-behavior: smooth;
+  scroll-snap-type: y proximity;
+}
+.reader[data-view="scroll"] .deck {
+  margin-inline: auto;
+  margin-block: 0;
+  flex-direction: column;
+  align-items: center;
+  gap: var(--s-5);
+  padding-block: var(--s-5) var(--s-6);
+}
+.reader[data-view="scroll"] .page { scroll-snap-align: center; }
+
+/* Continuous horizontal: a strip of pages you sweep sideways, snapping to
+   each one. Closer to a comic or a swipe-through reader than to a document. */
+.reader[data-view="hscroll"] .scroller {
+  scroll-behavior: smooth;
+  scroll-snap-type: x mandatory;
+  /* One axis only — a strip that also drifts vertically feels broken. */
+  overflow-y: hidden;
+}
+.reader[data-view="hscroll"] .deck {
+  margin-block: auto;
+  margin-inline: 0;
+  flex-direction: row;
+  align-items: center;
+  gap: var(--s-5);
+  padding-inline: var(--s-5);
+}
+.reader[data-view="hscroll"] .page { scroll-snap-align: center; }
+
+/* --- The page ------------------------------------------------------------- */
+
+.page {
+  position: relative;
+  flex: none;
+  background: #fff;
+  box-shadow: var(--shadow-page);
+  overflow: hidden;
+  /* width/height set inline from the PDF page size × scale */
+}
+
+/* Receives the cover flying in from the shelf. Exactly one element may carry a
+   given view-transition-name, so it is scoped to the first page only — the
+   scrolling modes mount every page, and a duplicate name aborts the whole
+   transition. */
+.deck > .page:first-child:not([data-leaving]) { view-transition-name: book; }
+
+@view-transition { navigation: auto; }
+::view-transition-old(book),
+::view-transition-new(book) {
+  animation-duration: 420ms;
+  animation-timing-function: var(--ease-page);
+}
+.page canvas { display: block; width: 100%; height: 100%; }
+
+.page-skeleton {
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(100deg, #f2efe9 30%, #e9e4da 50%, #f2efe9 70%);
+  background-size: 250% 100%;
+  animation: page-shimmer 1.4s linear infinite;
+}
+@keyframes page-shimmer { to { background-position: -250% 0; } }
+
+.page-no {
+  position: absolute;
+  inset-block-end: 0; inset-inline-start: 0;
+  padding: 0.1em 0.55em;
+  background: color-mix(in oklab, var(--ink-900) 62%, transparent);
+  color: #fff;
+  font-size: var(--t-micro);
+  font-variant-numeric: tabular-nums;
+  border-start-end-radius: var(--r-1);
+  opacity: 0;
+  transition: opacity var(--d-2);
+  pointer-events: none;
+}
+.page:hover .page-no { opacity: 1; }
+
+/* Annotation overlay. The explicit size matters: an <svg> takes an intrinsic
+   aspect ratio from its viewBox, so `inset: 0` alone leaves it square and every
+   stored y-coordinate lands in the wrong place. */
+.page .layer {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  z-index: 3;
+  touch-action: none;
+}
+.page .layer[data-active-tool="pan"] { pointer-events: none; }
+.page .layer[data-active-tool="highlight"],
+.page .layer[data-active-tool="rect"] { cursor: crosshair; }
+.page .layer[data-active-tool="pen"] { cursor: crosshair; }
+.page .layer[data-active-tool="note"],
+.page .layer[data-active-tool="text"] { cursor: copy; }
+.page .layer[data-active-tool="erase"] { cursor: not-allowed; }
+.page .layer .hit { cursor: pointer; }
+
+.pin-layer { position: absolute; inset: 0; z-index: 4; pointer-events: none; }
+.pin {
+  position: absolute;
+  transform: translate(-50%, -100%);
+  pointer-events: auto;
+  display: grid;
+  place-items: center;
+  width: 1.35rem; height: 1.35rem;
+  border: 0;
+  border-radius: 50% 50% 50% 2px;
+  background: var(--c, var(--mark-amber));
+  color: #241d0c;
+  font-size: 0.6rem;
+  font-weight: 700;
+  cursor: pointer;
+  box-shadow: var(--shadow-2);
+  transition: transform var(--d-2) var(--ease-out);
+}
+.pin:hover { transform: translate(-50%, -100%) scale(1.15); }
+
+.text-mark {
+  position: absolute;
+  transform: translateY(-50%);
+  pointer-events: auto;
+  max-width: 46%;
+  padding: 0.05em 0.3em;
+  border-radius: 2px;
+  background: color-mix(in oklab, #fff 80%, transparent);
+  color: var(--c, #1a1613);
+  font-family: var(--font-bn);
+  font-weight: 600;
+  line-height: 1.35;
+  cursor: pointer;
+  word-wrap: break-word;
+}
+
+/* --- Page turn transitions -------------------------------------------------
+   Two styles, both transform/opacity only so they stay on the compositor.
+
+   slide  a quiet lateral shift, for skimming
+   flip   the sheet rotates away on its spine, like turning a real page
+   ------------------------------------------------------------------------- */
+
+/* Slide (default for anyone who has not chosen otherwise) */
+@keyframes page-in-next  { from { opacity: 0; transform: translateX(4%)   scale(0.985); } }
+@keyframes page-in-prev  { from { opacity: 0; transform: translateX(-4%)  scale(0.985); } }
+@keyframes page-out-next { to   { opacity: 0; transform: translateX(-3%)  scale(0.99);  } }
+@keyframes page-out-prev { to   { opacity: 0; transform: translateX(3%)   scale(0.99);  } }
+
+.page[data-anim="in-next"]  { animation: page-in-next  var(--d-4) var(--ease-page) both; }
+.page[data-anim="in-prev"]  { animation: page-in-prev  var(--d-4) var(--ease-page) both; }
+.page[data-anim="out-next"] { animation: page-out-next var(--d-3) var(--ease-page) both; }
+.page[data-anim="out-prev"] { animation: page-out-prev var(--d-3) var(--ease-page) both; }
+
+/* Sliding out, the old page leaves the flow so the new one does not wait for
+   it. (The flip does this differently — see .curl below.) */
+.deck > .page[data-leaving="true"] {
+  position: absolute;
+  inset-block-start: 50%;
+  translate: 0 -50%;
+  z-index: 3;
+  pointer-events: none;
+}
+
+/* Flip — the corner peel. Geometry and the sweep live in js/curl.js; this is
+   only the stacking and the paper. Three layers occupy one page-sized box:
+   the outgoing page clipped to what is still flat, the shadow it drops on the
+   page beneath, and the flap — the same face reflected across the fold, which
+   is what shows the back of the sheet. */
+
+/* Lifted out of the deck's flow, so the page being uncovered takes the centre
+   at once rather than waiting for the sheet to finish leaving. */
+.curl {
+  position: absolute;
+  inset-block-start: 50%;
+  inset-inline-start: 50%;
+  translate: -50% -50%;
+  z-index: 3;
+  isolation: isolate;
+  pointer-events: none;
+  /* Once the fold passes the middle, the reflected sheet reaches past the page
+     it came from. In a book it would be lying over the facing page; here there
+     is only background behind, and a sheet of paper hanging in space over it
+     reads as a glitch. Keeping the turn inside the page footprint is what the
+     eye expects. */
+  overflow: hidden;
+}
+
+/* Every layer sits exactly on top of the page, in its pixel space. */
+.curl > .page,
+.curl > div {
+  position: absolute;
+  inset-block-start: 0;
+  inset-inline-start: 0;
+  margin: 0;
+}
+
+.curl-body { z-index: 1; }
+
+.curl-flap {
+  z-index: 3;
+  pointer-events: none;
+  /* The fold matrix is derived in page coordinates, where (0,0) is the page's
+     top-left. CSS would otherwise apply it about the element's centre, which
+     silently lands the reflected sheet in the wrong half of the page. */
+  transform-origin: 0 0;
+}
+
+/* The sheet itself. Carries the clip; the flap around it carries the shadow,
+   because clip-path would otherwise cut that shadow off. */
+.curl-sheet {
+  position: absolute;
+  inset: 0;
+  overflow: hidden;
+  background: #fff;
+}
+
+/* The shadow the raised sheet drops on the page it is uncovering.
+   drop-shadow works off the clipped silhouette, so it tracks the fold as the
+   fold moves — a background gradient cannot, being anchored to the page box
+   while the fold travels across it.
+
+   The offsets look wrong because they are pre-compensated. A filter is applied
+   in the element's own space and the reflection maps it afterwards, so the
+   offset that lands where we want has to be run backwards through the fold
+   first. next: matrix(0,-1,-1,0) sends (a,b) to (-b,-a), so (-5,-5) arrives as
+   (5,5), down-right onto the uncovered corner. prev: matrix(0,1,1,0) sends
+   (a,b) to (b,a), so (5,-5) arrives as (-5,5), down-left. Without this the
+   shadow lands underneath the sheet, where nobody can see it. */
+.curl[data-dir="next"] .curl-flap {
+  filter: drop-shadow(-4px -4px 7px rgba(0, 0, 0, 0.5));
+}
+.curl[data-dir="prev"] .curl-flap {
+  filter: drop-shadow(4px -4px 7px rgba(0, 0, 0, 0.5));
+}
+
+/* The reverse of the page: its own face, faint and — because the fold is a
+   diagonal — turned a quarter turn as well as mirrored, which is exactly what
+   you see on the back of a real page held over. */
+.curl-face {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  opacity: 0.26;
+}
+
+/* Shading, not whitening. The sheet is white paper already; what makes it look
+   like paper rather than a grey wash is a narrow bright band where it catches
+   the light, and shadow gathering into the fold. */
+.curl-sheen {
+  position: absolute;
+  inset: 0;
+}
+
+/* --fold is where the crease currently is along this gradient's axis, set
+   per frame from curl.js. Every stop is placed relative to it, so the dark
+   crease and the highlight just past it travel with the fold instead of
+   sitting wherever the page box happens to put them.
+
+   The sheet lies on the far side of the fold for a forward turn and the near
+   side for a backward one, which is why the two stop orders are mirrored. */
+.curl-sheen { --fold: 0; }
+
+.curl[data-dir="next"] .curl-sheen {
+  background-image: linear-gradient(135deg,
+    rgba(0, 0, 0, 0) calc(var(--fold) * 100%),
+    rgba(54, 48, 40, 0.45) calc(var(--fold) * 100% + 0.7%),
+    rgba(255, 255, 255, 0.88) calc(var(--fold) * 100% + 3.5%),
+    rgba(255, 255, 255, 0.28) calc(var(--fold) * 100% + 14%),
+    rgba(0, 0, 0, 0.12) 100%);
+}
+.curl[data-dir="prev"] .curl-sheen {
+  background-image: linear-gradient(45deg,
+    rgba(0, 0, 0, 0.12) 0%,
+    rgba(255, 255, 255, 0.28) calc(var(--fold) * 100% - 14%),
+    rgba(255, 255, 255, 0.88) calc(var(--fold) * 100% - 3.5%),
+    rgba(54, 48, 40, 0.45) calc(var(--fold) * 100% - 0.7%),
+    rgba(0, 0, 0, 0) calc(var(--fold) * 100%));
+}
+
+/* A turning sheet must not also be animating as a page. */
+.curl .page[data-anim] { animation: none; }
+
+/* A page coming back, in the moment between mounting and the curl taking it
+   over. Out of flow so the deck does not lay it out next to the page it is
+   about to cover; still measurable, which `display: none` would not be. */
+.page.is-returning {
+  position: absolute;
+  inset-block-start: 50%;
+  inset-inline-start: 50%;
+  translate: -50% -50%;
+  z-index: 4;
+}
+
+/* The page being uncovered was there all along, so it does not animate in.
+   Overrides the slide keyframes, which otherwise apply in every mode. */
+.reader[data-turn="flip"] .page[data-anim="in-next"],
+.reader[data-turn="flip"] .page[data-anim="in-prev"] { animation: none; }
+
+/* --- Turn zones ------------------------------------------------------------
+   Big invisible click targets down each side. They only exist in page modes
+   and only while the move tool is active, so they never eat a highlight drag. */
+
+.turn {
+  position: absolute;
+  inset-block: 0;
+  width: clamp(3.5rem, 14vw, 9rem);
+  z-index: 6;
+  border: 0;
+  background: none;
+  color: var(--text-3);
+  cursor: pointer;
+  display: grid;
+  place-items: center;
+  opacity: 0;
+  transition: opacity var(--d-2), background var(--d-2);
+}
+.turn--prev { inset-inline-start: 0; }
+.turn--next { inset-inline-end: 0; }
+.turn:hover { opacity: 1; background: linear-gradient(var(--dir, 90deg), color-mix(in oklab, var(--text) 6%, transparent), transparent); }
+.turn--prev:hover { --dir: 90deg; }
+.turn--next:hover { --dir: 270deg; }
+.turn:focus-visible { opacity: 1; }
+.turn[disabled] { cursor: default; }
+.turn[disabled]:hover { opacity: 0; background: none; }
+
+.turn-chev {
+  display: grid;
+  place-items: center;
+  width: 2.4rem; height: 2.4rem;
+  border-radius: 50%;
+  background: var(--surface);
+  border: 1px solid var(--line);
+  box-shadow: var(--shadow-2);
+}
+.turn-chev svg { width: 1.2rem; height: 1.2rem; }
+
+.reader[data-view="scroll"] .turn,
+.reader[data-view="hscroll"] .turn { display: none; }
+.reader:not([data-tool="pan"]) .turn { pointer-events: none; opacity: 0; }
+
+@media (hover: none) {
+  /* On touch the zones stay active but never show a hover affordance. */
+  .turn:hover { opacity: 0; background: none; }
+}
+
+/* ==========================================================================
+   Bottom bar
+   ========================================================================== */
+
+.bottombar {
+  display: grid;
+  grid-template-columns: auto 1fr auto;
+  align-items: center;
+  gap: var(--s-3);
+  padding: var(--s-2) var(--s-3);
+  padding-bottom: max(var(--s-2), env(safe-area-inset-bottom));
+  background: var(--surface);
+  border-top: 1px solid var(--line);
+  z-index: 30;
+}
+
+.pager { display: flex; align-items: center; gap: var(--s-1); }
+.pager input {
+  width: 3rem;
+  padding: 0.25rem;
+  border: 1px solid var(--line);
+  border-radius: var(--r-1);
+  background: var(--surface-2);
+  color: var(--text);
+  text-align: center;
+  font-size: var(--t-xs);
+  font-variant-numeric: tabular-nums;
+  -moz-appearance: textfield;
+  appearance: textfield;
+}
+.pager input::-webkit-inner-spin-button,
+.pager input::-webkit-outer-spin-button { appearance: none; margin: 0; }
+.of { font-size: var(--t-xs); color: var(--text-3); font-variant-numeric: tabular-nums; white-space: nowrap; }
+
+/* Page scrubber */
+.scrub { display: block; min-width: 0; }
+.scrub input {
+  width: 100%;
+  height: 1.5rem;
+  appearance: none;
+  background: none;
+  cursor: pointer;
+}
+.scrub input::-webkit-slider-runnable-track {
+  height: 3px;
+  border-radius: 2px;
+  background: var(--line);
+}
+.scrub input::-moz-range-track { height: 3px; border-radius: 2px; background: var(--line); }
+.scrub input::-webkit-slider-thumb {
+  appearance: none;
+  width: 0.85rem; height: 0.85rem;
+  margin-top: -0.38rem;
+  border-radius: 50%;
+  background: var(--accent);
+  border: 2px solid var(--surface);
+  box-shadow: var(--shadow-1);
+}
+.scrub input::-moz-range-thumb {
+  width: 0.85rem; height: 0.85rem;
+  border-radius: 50%;
+  background: var(--accent);
+  border: 2px solid var(--surface);
+}
+
+/* Annotation tools */
+.tools { display: flex; align-items: center; gap: 1px; }
+.tool {
+  display: grid;
+  place-items: center;
+  width: 2.1rem; height: 2.1rem;
+  flex: none;
+  border: 0;
+  border-radius: var(--r-2);
+  background: none;
+  color: var(--text-2);
+  cursor: pointer;
+  touch-action: manipulation;
+  transition: background var(--d-2), color var(--d-2);
+}
+.tool svg { width: 1.05rem; height: 1.05rem; }
+.tool:hover { background: var(--surface-3); color: var(--text); }
+.tool[aria-pressed="true"] { background: var(--accent-soft); color: var(--accent); }
+.tool-div { width: 1px; height: 1.3rem; background: var(--line); margin-inline: var(--s-2); flex: none; }
+
+.swatches { display: flex; align-items: center; gap: var(--s-1); }
+.swatch {
+  width: 1.15rem; height: 1.15rem;
+  flex: none;
+  border: 2px solid transparent;
+  border-radius: 50%;
+  background: var(--c);
+  cursor: pointer;
+  touch-action: manipulation;
+  box-shadow: inset 0 0 0 1px rgb(0 0 0 / 0.12);
+  transition: transform var(--d-2) var(--ease-out), border-color var(--d-2);
+}
+.swatch:hover { transform: scale(1.12); }
+.swatch[aria-checked="true"] { border-color: var(--text); transform: scale(1.12); }
+
+.zoomer { display: flex; align-items: center; gap: var(--s-1); }
+.fitbtn {
+  min-width: 5.5rem;
+  padding: 0.28rem 0.6rem;
+  border: 1px solid var(--line);
+  border-radius: var(--r-2);
+  background: var(--surface-2);
+  color: var(--text-1);
+  font-family: var(--font-bn);
+  font-size: var(--t-micro);
+  cursor: pointer;
+  white-space: nowrap;
+  transition: background var(--d-2), border-color var(--d-2);
+}
+.fitbtn:hover { background: var(--surface-3); border-color: var(--line-strong); }
+
+/* The bar reflows to two rows before anything is dropped. */
+@media (max-width: 1100px) {
+  .bottombar { grid-template-columns: auto 1fr auto; grid-template-areas: "pager scrub zoom" "tools tools tools"; row-gap: var(--s-2); }
+  .pager { grid-area: pager; }
+  .scrub { grid-area: scrub; }
+  .zoomer { grid-area: zoom; }
+  .tools { grid-area: tools; justify-content: center; overflow-x: auto; scrollbar-width: none; }
+  .tools::-webkit-scrollbar { display: none; }
+}
+@media (max-width: 560px) {
+  .zoomer .fitbtn { min-width: 0; }
+  .swatches .swatch:nth-child(n+5) { display: none; }
+}
+
+/* ==========================================================================
+   Immersive / fullscreen — chrome retracts, the page stays
+   ========================================================================== */
+
+.reader[data-immersive="true"] .topbar,
+.reader[data-immersive="true"] .bottombar {
+  position: fixed;
+  inset-inline: 0;
+  z-index: 40;
+  transition: transform var(--d-3) var(--ease-out), opacity var(--d-2);
+}
+.reader[data-immersive="true"] .topbar { top: 0; transform: translateY(-100%); opacity: 0; }
+.reader[data-immersive="true"] .bottombar { bottom: 0; transform: translateY(100%); opacity: 0; }
+.reader[data-immersive="true"][data-chrome="true"] .topbar,
+.reader[data-immersive="true"][data-chrome="true"] .bottombar { transform: none; opacity: 1; }
+.reader[data-immersive="true"] .frame { grid-row: 1 / -1; }
+
+/* ==========================================================================
+   Landing, preview, overlays
+   ========================================================================== */
+
+.landing {
+  position: absolute;
+  inset: 0;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: var(--s-7);
+  padding: var(--s-7) var(--gutter);
+  background: var(--canvas);
+  z-index: 8;
+}
+.landing-card { max-width: 32rem; text-align: center; }
+.landing-mark {
+  display: grid;
+  place-items: center;
+  width: 4rem; height: 4rem;
+  margin: 0 auto var(--s-5);
+  color: var(--accent);
+}
+.landing-mark svg { width: 100%; height: 100%; }
+.landing-card h1 { font-family: var(--font-bn); font-size: var(--t-h2); margin-bottom: var(--s-3); }
+.landing-card p { font-family: var(--font-bn); color: var(--text-2); line-height: 1.8; }
+.landing-actions { display: flex; flex-wrap: wrap; gap: var(--s-3); justify-content: center; margin-top: var(--s-5); }
+
+.recent { width: min(100%, 40rem); }
+.recent h2 { font-family: var(--font-bn); font-size: var(--t-h3); margin-bottom: var(--s-3); }
+.recent-list { list-style: none; padding: 0; display: grid; gap: var(--s-2); }
+.recent-list li {
+  display: flex; align-items: center; gap: var(--s-3);
+  padding: var(--s-3);
+  border: 1px solid var(--line);
+  border-radius: var(--r-2);
+  background: var(--surface);
+  transition: border-color var(--d-2);
+}
+.recent-list li:hover { border-color: var(--accent-line); }
+.recent-list a { flex: 1; min-width: 0; font-family: var(--font-bn); font-size: var(--t-sm); font-weight: 600; }
+.recent-list small { color: var(--text-3); font-size: var(--t-xs); white-space: nowrap; font-variant-numeric: tabular-nums; }
+
+.preview { position: absolute; inset: 0; display: flex; flex-direction: column; z-index: 8; background: var(--canvas); }
+.preview-note {
+  display: flex; flex-wrap: wrap; align-items: center; gap: var(--s-4);
+  padding: var(--s-3) var(--s-4);
+  background: var(--accent-soft);
+  border-bottom: 1px solid var(--accent-line);
+  font-family: var(--font-bn);
+  font-size: var(--t-xs);
+  line-height: 1.7;
+  color: var(--text-1);
+}
+.preview-note > div:first-child { flex: 1; min-width: 15rem; }
+.preview-note code {
+  padding: 0.1em 0.4em;
+  border-radius: var(--r-1);
+  background: color-mix(in oklab, var(--ink-900) 10%, transparent);
+  font-family: var(--font-mono);
+  font-size: 0.92em;
+  white-space: nowrap;
+}
+.preview-actions { display: flex; gap: var(--s-2); flex-wrap: wrap; }
+#preview-frame { flex: 1; width: 100%; border: 0; background: var(--surface-2); }
+
+.loading {
+  position: absolute;
+  inset: 0;
+  z-index: 20;
+  display: grid;
+  place-content: center;
+  justify-items: center;
+  gap: var(--s-3);
+  background: color-mix(in oklab, var(--canvas) 86%, transparent);
+  font-family: var(--font-bn);
+  font-size: var(--t-sm);
+  color: var(--text-2);
+}
+.loading .spinner { width: 1.6rem; height: 1.6rem; color: var(--accent); }
+
+.dropzone {
+  position: absolute;
+  inset: var(--s-3);
+  z-index: 50;
+  display: grid;
+  place-items: center;
+  border: 2px dashed var(--accent);
+  border-radius: var(--r-3);
+  background: color-mix(in oklab, var(--canvas) 84%, transparent);
+  font-family: var(--font-bn);
+  font-size: 1.2rem;
+  color: var(--accent);
+}
+
+/* ==========================================================================
+   Dialogs
+   ========================================================================== */
+
+.sheet {
+  width: min(100% - 2rem, 25rem);
+  padding: var(--s-5);
+  border: 1px solid var(--line);
+  border-radius: var(--r-3);
+  background: var(--surface);
+  color: var(--text);
+  box-shadow: var(--shadow-3);
+}
+.sheet--wide { width: min(100% - 2rem, 32rem); padding: 0; }
+.sheet::backdrop { background: color-mix(in oklab, #1a1613 55%, transparent); }
+.sheet h2 { font-family: var(--font-bn); font-size: var(--t-h3); margin-bottom: var(--s-3); }
+.sheet textarea {
+  width: 100%;
+  padding: var(--s-3);
+  border: 1px solid var(--line);
+  border-radius: var(--r-2);
+  background: var(--surface-2);
+  color: var(--text);
+  font-family: var(--font-bn);
+  font-size: var(--t-sm);
+  line-height: 1.7;
+  resize: vertical;
+}
+.sheet menu { display: flex; align-items: center; gap: var(--s-2); padding: 0; margin: var(--s-4) 0 0; }
+
+.sheet-head { display: flex; align-items: start; gap: var(--s-3); padding: var(--s-5) var(--s-5) var(--s-4); border-bottom: 1px solid var(--line-soft); }
+.sheet-head p { font-family: var(--font-bn); font-size: var(--t-xs); color: var(--text-2); line-height: 1.7; }
+.sheet-head p + p { margin-top: var(--s-2); }
+.sheet-head code { font-family: var(--font-mono); color: var(--accent); }
+.sheet-body { padding: var(--s-4) var(--s-5); display: grid; gap: var(--s-3); }
+.sheet-foot { display: flex; align-items: center; gap: var(--s-2); padding: var(--s-4) var(--s-5); border-top: 1px solid var(--line-soft); }
+
+.opt { margin: 0; padding: var(--s-3); border: 1px solid var(--line); border-radius: var(--r-2); background: var(--surface-2); }
+.opt:has(input:checked) { border-color: var(--accent); background: var(--accent-soft); }
+.opt legend { padding: 0 0 var(--s-2); }
+.opt legend label { display: inline-flex; align-items: center; gap: var(--s-2); font-size: var(--t-sm); cursor: pointer; }
+.opt .field input { width: 100%; }
+
+.bridge-result { padding: var(--s-3); border: 1px solid var(--line); border-radius: var(--r-2); font-size: var(--t-xs); line-height: 1.6; }
+.bridge-result[data-ok="true"] { border-color: var(--ok); background: color-mix(in oklab, var(--ok) 10%, transparent); }
+.bridge-result[data-ok="false"] { border-color: var(--bad); background: color-mix(in oklab, var(--bad) 8%, transparent); }
+
+/* ==========================================================================
+   Motion preference
+   ========================================================================== */
+
+@media (prefers-reduced-motion: reduce) {
+  .page[data-anim] { animation: none !important; }
+  .reader[data-turn="flip"] .deck { perspective: none; }
+  .reader[data-view="scroll"] .scroller,
+  .reader[data-view="hscroll"] .scroller { scroll-behavior: auto; }
+  .deck > .page[data-leaving="true"] { display: none; }
+  .page-skeleton { animation: none; }
+}

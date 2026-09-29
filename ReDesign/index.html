@@ -1,0 +1,139 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>The Shelf — every NCTB textbook, ready to read</title>
+<meta name="description" content="Every NCTB textbook from pre-primary to class 12. Open one in the browser, highlight it, take notes — and they'll still be there next time.">
+<meta name="color-scheme" content="light dark">
+<script>
+  try { var t = localStorage.getItem('atlas:theme'); if (t) document.documentElement.setAttribute('data-theme', t); } catch (e) {}
+</script>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Source+Serif+4:opsz,wght@8..60,400;8..60,600;8..60,700&family=Noto+Serif+Bengali:wght@400;600;700&family=Inter:wght@400;500;600&display=swap">
+<link rel="stylesheet" href="./assets/css/tokens.css">
+<link rel="stylesheet" href="./assets/css/app.css">
+<link rel="stylesheet" href="./assets/css/shelf.css">
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='6' fill='%23fdfbf7'/%3E%3Cpath d='M8 7h8a4 4 0 0 1 4 4v14H12a4 4 0 0 1-4-4z' fill='none' stroke='%23a85a07' stroke-width='2.2' stroke-linejoin='round'/%3E%3Cpath d='M12 12h6M12 16h6' stroke='%23a85a07' stroke-width='2.2' stroke-linecap='round'/%3E%3C/svg%3E">
+</head>
+<body>
+
+<a class="skip-link" href="#main">Skip to the books</a>
+
+<header class="bar">
+  <div class="wrap bar-in">
+    <a class="mark" href="./index.html">
+      <span class="mark-ico" aria-hidden="true">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linejoin="round">
+          <path d="M4 5.5h7a3 3 0 0 1 3 3V20H7a3 3 0 0 1-3-3z"/><path d="M20 5.5h-3a3 3 0 0 0-3 3V20h6z"/>
+        </svg>
+      </span>
+      <span class="mark-txt">The&nbsp;Shelf</span>
+    </a>
+
+    <label class="field bar-search">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true">
+        <circle cx="11" cy="11" r="6.4"/><path d="m20 20-4.2-4.2"/>
+      </svg>
+      <span class="sr-only">Search for a book</span>
+      <input id="q" type="search" placeholder="Search a title — গণিত, English for Today…" autocomplete="off" spellcheck="false">
+    </label>
+
+    <button class="iconbtn" type="button" data-theme-toggle aria-pressed="false" aria-label="Night reading" title="Night reading">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" aria-hidden="true">
+        <path d="M20 13.5A8 8 0 0 1 10.5 4a8 8 0 1 0 9.5 9.5z"/>
+      </svg>
+    </button>
+  </div>
+</header>
+
+<main id="main">
+
+  <!-- ══════════ Hero ══════════ -->
+  <section class="hero" id="hero">
+    <div class="wrap">
+      <p class="kicker" data-rise>National Curriculum &amp; Textbook Board</p>
+      <h1 class="hero-h">
+        <span class="line" data-rise><span>Every textbook.</span></span>
+        <span class="line" data-rise><span>One shelf.</span></span>
+        <span class="line line--alt" data-rise><span>Open it and read.</span></span>
+      </h1>
+      <p class="hero-sub" data-rise>
+        Pre-primary through class twelve. Books open in the browser — highlight
+        them, write in the margins, and it is all still there when you come back.
+        <span lang="bn" class="bn">সব বই, এক জায়গায়।</span>
+      </p>
+      <p class="hero-stat" data-rise>
+        <b id="stat-books">0</b> books · <b id="stat-years">0</b> academic years
+      </p>
+    </div>
+
+    <!-- real covers, drifting -->
+    <div class="wall" id="wall" aria-hidden="true"></div>
+  </section>
+
+  <div class="wrap">
+
+    <!-- Continue reading -->
+    <section class="resume" id="resume" hidden>
+      <h2 class="rule"><span>Pick up where you left off</span></h2>
+      <div class="resume-row" id="resume-row"></div>
+    </section>
+
+    <!-- Step 1 -->
+    <section class="pick" id="pick">
+      <h2 class="rule"><span>Which class?</span></h2>
+      <div class="shelf-row">
+        <div class="classes" id="classes" role="group" aria-label="Choose a class"></div>
+        <div class="ledge" aria-hidden="true"></div>
+      </div>
+    </section>
+
+    <!-- Step 2 -->
+    <section class="refine" id="refine" hidden>
+      <div class="refine-head">
+        <div>
+          <button class="crumb-back" type="button" id="back-classes">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M15 6l-6 6 6 6"/></svg>
+            All classes
+          </button>
+          <h2 id="refine-title">—</h2>
+        </div>
+        <p class="count" id="count" aria-live="polite"></p>
+      </div>
+
+      <div class="filters">
+        <div class="filter-row" id="year-row">
+          <span class="filter-label">Year</span>
+          <div class="pills" id="years" role="group" aria-label="Academic year"></div>
+        </div>
+        <p class="year-note" id="year-note" role="status" hidden></p>
+        <div class="filter-row" id="level-row" hidden>
+          <span class="filter-label">Stream</span>
+          <div class="pills" id="levels" role="group" aria-label="Stream"></div>
+        </div>
+      </div>
+    </section>
+
+    <!-- Books -->
+    <section class="books" id="books-wrap" hidden>
+      <div class="grid" id="grid"></div>
+      <p class="none" id="none" hidden>No book matches that. Try a different year or clear the search.</p>
+      <div class="more-wrap"><button class="btn" type="button" id="more" hidden>Show more</button></div>
+    </section>
+
+  </div>
+</main>
+
+<footer class="foot">
+  <div class="wrap">
+    <p>Published by the National Curriculum and Textbook Board; the books remain
+       their property. This is an independent reader, not an official service.</p>
+    <p class="foot-note">Your highlights and notes never leave this browser.</p>
+  </div>
+</footer>
+
+<script type="module" src="./assets/js/shelf.js"></script>
+</body>
+</html>

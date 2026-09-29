@@ -1,0 +1,469 @@
+/* ==========================================================================
+   The Shelf
+
+   The idea, held consistently: this is a shelf of physical books. Covers sit
+   on a ledge and cast a shadow onto it, classes are spines you pull out, and
+   opening a book carries its cover into the reader.
+
+   That metaphor is what earns the motion — nothing here moves for decoration.
+   ========================================================================== */
+
+.wrap {
+  width: min(100% - var(--gutter) * 2, var(--shell));
+  margin-inline: auto;
+}
+
+/* --- Bar ------------------------------------------------------------------ */
+
+.bar {
+  position: sticky;
+  top: 0;
+  z-index: 40;
+  background: color-mix(in oklab, var(--canvas) 88%, transparent);
+  backdrop-filter: blur(14px) saturate(1.3);
+  border-bottom: 1px solid transparent;
+  transition: border-color var(--d-3), background var(--d-3);
+}
+.bar[data-stuck="true"] { border-bottom-color: var(--line); }
+
+.bar-in { display: flex; align-items: center; gap: var(--s-4); min-height: 3.6rem; }
+
+.mark { display: inline-flex; align-items: center; gap: var(--s-2); flex: none; }
+.mark-ico {
+  display: grid; place-items: center;
+  width: 1.9rem; height: 1.9rem;
+  color: var(--accent);
+  transition: transform var(--d-3) var(--ease-out);
+}
+.mark-ico svg { width: 100%; height: 100%; }
+.mark:hover .mark-ico { transform: rotate(-7deg) scale(1.06); }
+.mark-txt { font-family: var(--font-serif); font-size: 1.1rem; font-weight: 700; letter-spacing: -0.02em; }
+
+.bar-search { flex: 1; max-width: 28rem; margin-inline: auto; }
+
+.iconbtn {
+  display: grid; place-items: center;
+  width: 2.2rem; height: 2.2rem;
+  flex: none; border: 0; border-radius: var(--r-2);
+  background: none; color: var(--text-2);
+  cursor: pointer; touch-action: manipulation;
+  transition: background var(--d-2), color var(--d-2), transform var(--d-2) var(--ease-out);
+}
+.iconbtn svg { width: 1.05rem; height: 1.05rem; }
+.iconbtn:hover { background: var(--surface-3); color: var(--text); transform: rotate(-12deg); }
+
+@media (max-width: 620px) {
+  .bar-in { flex-wrap: wrap; padding-block: var(--s-2); }
+  .bar-search { order: 3; flex-basis: 100%; max-width: none; }
+  .mark { flex: 1; }
+}
+
+/* --- Hero ------------------------------------------------------------------ */
+
+.hero { padding-block: clamp(2.5rem, 1rem + 6vw, 6rem) 0; overflow: hidden; }
+
+.kicker {
+  font-size: var(--t-micro);
+  font-weight: 500;
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+  color: var(--text-3);
+  margin-bottom: var(--s-4);
+}
+
+.hero-h {
+  font-family: var(--font-serif);
+  font-size: clamp(2.6rem, 1.3rem + 5.6vw, 5.4rem);
+  font-weight: 700;
+  line-height: 1.02;
+  letter-spacing: -0.035em;
+  margin-bottom: var(--s-5);
+}
+/* Each line rises from behind a clipping edge — the type sets itself. */
+.hero-h .line { display: block; overflow: hidden; }
+.hero-h .line > span { display: block; will-change: transform; }
+.hero-h .line--alt > span { color: var(--accent); font-style: italic; }
+
+.hero-sub {
+  font-size: var(--t-lead);
+  color: var(--text-2);
+  max-width: 46ch;
+  line-height: 1.7;
+}
+.hero-sub .bn { display: block; margin-top: var(--s-2); color: var(--text-3); font-size: 0.95em; }
+
+.hero-stat {
+  margin-top: var(--s-5);
+  font-size: var(--t-sm);
+  color: var(--text-3);
+  font-variant-numeric: tabular-nums;
+}
+.hero-stat b { color: var(--text); font-family: var(--font-serif); font-size: 1.35em; font-weight: 700; }
+
+/* Entrance: lines rise, everything else fades up behind them. */
+[data-rise] { opacity: 0; }
+[data-rise] > span, .hero-sub[data-rise], .kicker[data-rise], .hero-stat[data-rise] { will-change: transform, opacity; }
+
+.js-ready [data-rise] { opacity: 1; }
+.js-ready .hero-h .line > span { animation: line-rise 900ms var(--ease-page) both; }
+.js-ready .hero-h .line:nth-child(2) > span { animation-delay: 90ms; }
+.js-ready .hero-h .line:nth-child(3) > span { animation-delay: 180ms; }
+.js-ready .kicker { animation: fade-up 700ms var(--ease-out) both; }
+.js-ready .hero-sub { animation: fade-up 700ms var(--ease-out) 280ms both; }
+.js-ready .hero-stat { animation: fade-up 700ms var(--ease-out) 380ms both; }
+
+@keyframes line-rise { from { transform: translateY(105%) rotate(2deg); } }
+@keyframes fade-up { from { opacity: 0; transform: translateY(0.8rem); } }
+
+/* --- Cover wall -------------------------------------------------------------
+   Two rows of real covers drifting in opposite directions. Duplicated so the
+   -50% loop has no seam. It is the product, moving — not an ornament.        */
+
+.wall {
+  margin-top: clamp(2.5rem, 1rem + 5vw, 5rem);
+  display: grid;
+  gap: var(--s-3);
+  width: 100vw;
+  margin-inline: calc(50% - 50vw);
+  mask-image: linear-gradient(90deg, transparent, #000 10%, #000 90%, transparent);
+  -webkit-mask-image: linear-gradient(90deg, transparent, #000 10%, #000 90%, transparent);
+}
+.wall-row { display: flex; gap: var(--s-3); width: max-content; animation: drift 90s linear infinite; }
+.wall-row--rev { animation-direction: reverse; animation-duration: 112s; }
+.wall:hover .wall-row { animation-play-state: paused; }
+@keyframes drift { to { transform: translateX(-50%); } }
+
+.wall .cv {
+  flex: none;
+  width: clamp(74px, 8vw, 116px);
+  aspect-ratio: 3 / 4;
+  border-radius: 2px;
+  background: var(--surface-3);
+  overflow: hidden;
+  box-shadow: var(--shadow-2);
+  transition: transform var(--d-3) var(--ease-out), box-shadow var(--d-3);
+}
+.wall .cv img { width: 100%; height: 100%; object-fit: cover; opacity: 0; transition: opacity 600ms var(--ease-out); }
+.wall .cv img[data-in="true"] { opacity: 1; }
+.wall .cv:hover { transform: translateY(-8px) rotate(-1.5deg); box-shadow: var(--shadow-3); z-index: 2; }
+
+@media (prefers-reduced-motion: reduce) {
+  .wall-row { animation: none; flex-wrap: wrap; width: 100%; justify-content: center; }
+  .wall { mask-image: none; -webkit-mask-image: none; }
+}
+
+/* --- Section rule ----------------------------------------------------------- */
+
+.rule {
+  display: flex; align-items: center; gap: var(--s-4);
+  font-family: var(--font-serif);
+  font-size: var(--t-h3);
+  font-weight: 600;
+  margin-bottom: var(--s-5);
+}
+.rule::after { content: ""; flex: 1; height: 1px; background: var(--line); }
+
+/* --- Continue reading -------------------------------------------------------- */
+
+.resume { padding-block: clamp(3rem, 2rem + 3vw, 5rem) 0; }
+.resume-row {
+  display: grid; grid-auto-flow: column; grid-auto-columns: minmax(13rem, 1fr);
+  gap: var(--s-3); overflow-x: auto; padding-bottom: var(--s-2);
+  scroll-snap-type: x proximity; overscroll-behavior-x: contain;
+}
+.resume-card {
+  scroll-snap-align: start;
+  display: flex; gap: var(--s-3); padding: var(--s-3);
+  border: 1px solid var(--line); border-radius: var(--r-2);
+  background: var(--surface);
+  transition: border-color var(--d-2), transform var(--d-2) var(--ease-out), box-shadow var(--d-2);
+}
+.resume-card:hover { border-color: var(--accent-line); transform: translateY(-3px); box-shadow: var(--shadow-2); }
+.resume-cover {
+  width: 2.6rem; aspect-ratio: 3/4; flex: none; object-fit: cover;
+  border-radius: 2px; background: var(--surface-3); box-shadow: var(--shadow-1);
+}
+.resume-card b {
+  display: -webkit-box; -webkit-line-clamp: 2; line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden;
+  font-family: var(--font-bn); font-size: var(--t-sm); font-weight: 600; line-height: 1.4;
+}
+.resume-card small { display: block; margin-top: 0.15rem; color: var(--text-3); font-size: var(--t-micro); font-variant-numeric: tabular-nums; }
+.resume-bar { display: block; height: 2px; margin-top: 0.4rem; background: var(--line); border-radius: 2px; overflow: hidden; }
+.resume-bar i { display: block; height: 100%; background: var(--accent); border-radius: inherit; }
+
+/* --- Step 1: the class spines -------------------------------------------------
+   Cards styled as books standing on a shelf: a coloured spine down the left,
+   a shadow cast onto the ledge, and a lift when you reach for one.           */
+
+.pick { padding-block: clamp(3rem, 2rem + 3vw, 5rem) 0; }
+.shelf-row { position: relative; padding-bottom: var(--s-5); }
+
+.classes {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(6.2rem, 1fr));
+  gap: var(--s-3);
+  align-items: end;
+}
+
+.class-btn {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: var(--s-4);
+  min-height: 7.5rem;
+  padding: var(--s-4) var(--s-3) var(--s-3) calc(var(--s-4) + 6px);
+  border: 1px solid var(--line);
+  border-radius: 3px var(--r-2) var(--r-2) 3px;
+  background: var(--surface);
+  box-shadow: var(--shadow-1);
+  cursor: pointer;
+  text-align: start;
+  touch-action: manipulation;
+  transform-origin: bottom center;
+  transition: transform var(--d-3) var(--ease-out), box-shadow var(--d-3) var(--ease-out),
+              border-color var(--d-2), background var(--d-2);
+  animation: spine-in var(--d-4) var(--ease-out) both;
+  animation-delay: calc(var(--i, 0) * 35ms);
+}
+/* the spine */
+.class-btn::before {
+  content: "";
+  position: absolute;
+  inset-block: -1px;
+  inset-inline-start: -1px;
+  width: 6px;
+  border-radius: 3px 0 0 3px;
+  background: var(--bind);
+  transition: background var(--d-2);
+}
+.class-btn:nth-child(3n+2)::before { background: var(--accent); }
+.class-btn:nth-child(3n+3)::before { background: color-mix(in oklab, var(--bind) 55%, var(--accent)); }
+
+.class-btn:hover {
+  transform: translateY(-10px) rotate(-1deg);
+  box-shadow: var(--shadow-3);
+  border-color: var(--line-strong);
+}
+.class-btn:active { transform: translateY(-4px) rotate(0deg); }
+.class-btn[aria-pressed="true"] { background: var(--accent-soft); border-color: var(--accent-line); }
+
+@keyframes spine-in { from { opacity: 0; transform: translateY(1.2rem) rotate(-2deg); } }
+
+.class-n {
+  font-family: var(--font-serif);
+  font-size: 2.1rem;
+  font-weight: 700;
+  line-height: 0.95;
+  letter-spacing: -0.03em;
+  color: var(--text);
+  font-variant-numeric: tabular-nums;
+}
+.class-n small { display: block; font-family: var(--font-sans); font-size: 0.62rem; font-weight: 500;
+  letter-spacing: 0.1em; text-transform: uppercase; color: var(--text-3); margin-top: 0.4rem; }
+.class-count { font-size: var(--t-micro); color: var(--text-3); font-variant-numeric: tabular-nums; }
+
+/* the shelf the books stand on */
+.ledge {
+  position: absolute;
+  inset-inline: calc(var(--s-3) * -1);
+  bottom: 0;
+  height: 3px;
+  background: linear-gradient(90deg, transparent, var(--line-strong) 6%, var(--line-strong) 94%, transparent);
+  border-radius: 2px;
+}
+.ledge::after {
+  content: "";
+  position: absolute;
+  inset-inline: 4%;
+  top: 3px;
+  height: 14px;
+  background: linear-gradient(var(--line-soft), transparent);
+  opacity: 0.7;
+}
+
+/* --- Step 2: refine ----------------------------------------------------------- */
+
+.refine {
+  padding-block: clamp(2.5rem, 2rem + 2vw, 4rem) var(--s-4);
+  /* Searching scrolls this into view, and the bar above is sticky — without a
+     margin the results heading lands underneath it. */
+  scroll-margin-top: 5.5rem;
+}
+.refine-head {
+  display: flex; flex-wrap: wrap; align-items: baseline; justify-content: space-between;
+  gap: var(--s-3); margin-bottom: var(--s-5);
+}
+.refine-head h2 { font-family: var(--font-serif); font-size: var(--t-h2); }
+.refine-head h2 .bn { font-family: var(--font-bn); }
+
+.crumb-back {
+  display: inline-flex; align-items: center; gap: 0.3em;
+  padding: 0.2rem 0.5rem 0.2rem 0.2rem; margin-bottom: var(--s-2);
+  border: 0; border-radius: var(--r-1); background: none;
+  color: var(--text-3); font-size: var(--t-xs); cursor: pointer;
+  transition: color var(--d-2), gap var(--d-2);
+}
+.crumb-back svg { width: 0.85rem; height: 0.85rem; }
+.crumb-back:hover { color: var(--accent); gap: 0.55em; }
+
+.count { font-size: var(--t-sm); color: var(--text-2); font-variant-numeric: tabular-nums; }
+
+.filters { display: grid; gap: var(--s-3); }
+.filter-row { display: flex; align-items: center; gap: var(--s-3); flex-wrap: wrap; }
+.filter-label {
+  font-size: var(--t-micro); letter-spacing: 0.1em; text-transform: uppercase;
+  color: var(--text-3); min-width: 3.5rem; flex: none;
+}
+.pills { display: flex; flex-wrap: wrap; gap: var(--s-2); }
+
+.pill {
+  padding: 0.3rem 0.85rem; min-height: 2rem;
+  border: 1px solid var(--line); border-radius: var(--r-pill);
+  background: var(--surface); color: var(--text-2);
+  font-size: var(--t-xs); font-weight: 500; cursor: pointer;
+  touch-action: manipulation; font-variant-numeric: tabular-nums;
+  transition: background var(--d-2), border-color var(--d-2), color var(--d-2), transform var(--d-2) var(--ease-out);
+}
+.pill:hover { border-color: var(--line-strong); color: var(--text); transform: translateY(-1px); }
+.pill[aria-pressed="true"] { background: var(--text); border-color: var(--text); color: var(--canvas); }
+@media (pointer: coarse) { .pill { min-height: 2.4rem; } }
+
+/* --- Books --------------------------------------------------------------------- */
+
+.books { padding-block: var(--s-6) var(--s-8); }
+
+.grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(min(100%, 9.5rem), 1fr));
+  gap: clamp(1.5rem, 1rem + 2vw, 2.75rem) clamp(0.75rem, 0.5rem + 1vw, 1.5rem);
+}
+
+.book {
+  display: flex;
+  flex-direction: column;
+  gap: var(--s-3);
+  animation: book-in 520ms var(--ease-out) both;
+  animation-delay: calc(var(--i, 0) * 26ms);
+}
+@keyframes book-in { from { opacity: 0; transform: translateY(1.1rem) scale(0.97); } }
+
+.book-cover {
+  position: relative;
+  display: block;
+  aspect-ratio: 3 / 4;
+  border-radius: 2px;
+  background: var(--surface-3);
+  overflow: hidden;
+  box-shadow: var(--shadow-2);
+  transform-origin: bottom center;
+  transition: transform var(--d-3) var(--ease-out), box-shadow var(--d-3) var(--ease-out);
+}
+/* the shadow it casts on the shelf */
+.book-cover::after {
+  content: "";
+  position: absolute;
+  inset-inline: 8%;
+  bottom: -10px;
+  height: 10px;
+  border-radius: 50%;
+  background: radial-gradient(ellipse at center, color-mix(in oklab, var(--ink-900) 26%, transparent), transparent 72%);
+  opacity: 0;
+  transition: opacity var(--d-3), transform var(--d-3);
+  pointer-events: none;
+}
+.book:hover .book-cover { transform: translateY(-8px) rotate(-1.2deg); box-shadow: var(--shadow-3); }
+.book:hover .book-cover::after { opacity: 1; transform: scaleX(1.08); }
+
+.book-cover img { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; }
+
+/* A year whose books are all held here. The dot echoes the one on the covers,
+   so the same mark means the same thing everywhere on the page. */
+.pill-local { position: relative; padding-inline-end: 1.35rem; }
+
+.pill-dot {
+  position: absolute;
+  inset-block-start: 50%;
+  inset-inline-end: 0.55rem;
+  translate: 0 -50%;
+  width: 0.4rem;
+  height: 0.4rem;
+  border-radius: 50%;
+  background: var(--ok);
+}
+
+.pill[aria-pressed='true'] .pill-dot { background: currentColor; }
+
+.year-note {
+  margin: 0.35rem 0 0;
+  font-size: 0.8rem;
+  color: var(--muted);
+}
+
+/* Held in books/ — a quiet mark, not a badge. It sits above the cover image
+   so it survives whatever artwork is behind it. */
+.offline-dot {
+  position: absolute;
+  z-index: 2;
+  inset-block-start: 0.4rem;
+  inset-inline-end: 0.4rem;
+  width: 0.5rem;
+  height: 0.5rem;
+  border-radius: 50%;
+  background: var(--ok);
+  box-shadow: 0 0 0 2px var(--surface);
+}
+
+/* Fallback when Drive has no thumbnail: a plain titled spine. */
+.book-blank {
+  position: absolute; inset: 0;
+  display: grid; align-content: center; gap: 0.4rem;
+  padding: var(--s-3);
+  background: linear-gradient(160deg, var(--surface-2), var(--surface-3));
+  border-inline-start: 5px solid var(--accent);
+}
+.book-blank span {
+  font-family: var(--font-bn); font-size: var(--t-xs); font-weight: 600;
+  color: var(--text-2); line-height: 1.4;
+  display: -webkit-box; -webkit-line-clamp: 4; line-clamp: 4; -webkit-box-orient: vertical; overflow: hidden;
+}
+
+.book-title {
+  font-family: var(--font-bn);
+  font-size: var(--t-sm); font-weight: 600; line-height: 1.45; color: var(--text);
+  display: -webkit-box; -webkit-line-clamp: 2; line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden;
+  transition: color var(--d-2);
+}
+.book:hover .book-title { color: var(--accent); }
+.book-meta { display: flex; flex-wrap: wrap; gap: 0.45rem; font-size: var(--t-micro); color: var(--text-3); font-variant-numeric: tabular-nums; }
+
+.none, .more-wrap { text-align: center; }
+.none { padding-block: var(--s-8); color: var(--text-2); }
+.more-wrap { padding-top: var(--s-6); }
+
+/* --- Foot ------------------------------------------------------------------------ */
+
+.foot { border-top: 1px solid var(--line); padding-block: var(--s-6); margin-top: var(--s-7); }
+.foot p { font-size: var(--t-xs); color: var(--text-3); max-width: 62ch; }
+.foot-note { margin-top: var(--s-2); }
+
+/* --- Cross-document view transition ----------------------------------------------
+   The cover you click becomes the page you land on. Chrome only; everywhere
+   else this is simply ignored and navigation is normal.                          */
+
+@view-transition { navigation: auto; }
+
+::view-transition-old(book),
+::view-transition-new(book) {
+  animation-duration: 420ms;
+  animation-timing-function: var(--ease-page);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  @view-transition { navigation: none; }
+  .class-btn, .book { animation: none; }
+  .js-ready .hero-h .line > span,
+  .js-ready .kicker, .js-ready .hero-sub, .js-ready .hero-stat { animation: none; }
+  [data-rise] { opacity: 1; }
+}

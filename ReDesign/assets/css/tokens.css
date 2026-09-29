@@ -1,0 +1,221 @@
+/* ==========================================================================
+   NCTB Reader — design tokens
+
+   Paper and ink. Light is the default because this is a reading product used
+   in daylight by students; dark is a genuine night-reading mode rather than
+   the brand.
+
+   Two rules this file exists to enforce:
+     1. ONE accent. Amber is "your marks" — highlighter, active state, the
+        thing you made. Nothing else competes for attention.
+     2. The books supply the colour. Chrome stays paper, ink and hairline, so
+        cover art is the brightest thing on any screen.
+   ========================================================================== */
+
+:root {
+  color-scheme: light;
+
+  /* --- Ground ------------------------------------------------------------
+     Warm neutrals, never blue-grey — blue-grey is what makes an interface
+     read as "software" instead of "page". */
+  --paper-000: #ffffff;
+  --paper-050: #fdfbf7;
+  --paper-100: #f8f4ec;
+  --paper-200: #f1ebdf;
+  --paper-300: #e7dfd0;
+
+  --canvas: var(--paper-050);
+  --surface: var(--paper-000);
+  --surface-2: var(--paper-100);
+  --surface-3: var(--paper-200);
+
+  --line: #ded5c4;
+  --line-soft: #ebe4d7;
+  --line-strong: #c4b8a2;
+
+  /* --- Ink ---------------------------------------------------------------
+     All four steps clear 4.5:1 on --canvas. */
+  --ink-900: #1a1613;
+  --text: var(--ink-900);
+  --text-1: #3d352c;
+  --text-2: #5a4f42;
+  --text-3: #6f6354;
+
+  /* --- Accent ------------------------------------------------------------ */
+  --accent: #a85a07;          /* amber-ochre; 5.2:1 on paper */
+  --accent-ink: #ffffff;
+  --accent-soft: #f6e7cf;
+  --accent-line: #d9a460;
+
+  /* Structural second colour — used for spine/rule details, never as a
+     second call to action. */
+  --bind: #5c3a21;
+
+  --ok: #2f6b46;
+  --warn: #8a5a00;
+  --bad: #a32c1c;
+
+  /* --- Marks -------------------------------------------------------------
+     Annotation colours, tuned to sit over scanned pages without hiding the
+     text under them. Print-ink hues, not screen neon. */
+  --mark-amber: #f2c14e;
+  --mark-rose: #e8836f;
+  --mark-mint: #7fc8a0;
+  --mark-sky: #7cb3d9;
+  --mark-violet: #a68cc8;
+  --mark-ink: #33302b;
+
+  /* --- Type --------------------------------------------------------------
+     Serif carries titles and anything from a book; sans is for chrome only.
+     Bengali has its own serif so Bangla titles are not left in a fallback. */
+  --font-serif: "Source Serif 4", "Noto Serif Bengali", Georgia, "Times New Roman", serif;
+  --font-bn: "Noto Serif Bengali", "Source Serif 4", "Nirmala UI", serif;
+  --font-sans: "Inter", "Anek Bangla", "Nirmala UI", system-ui, -apple-system, sans-serif;
+  --font-mono: "JetBrains Mono", ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+
+  --t-hero: clamp(2.4rem, 1.4rem + 4.2vw, 4.6rem);
+  --t-h1: clamp(1.9rem, 1.3rem + 2.4vw, 3rem);
+  --t-h2: clamp(1.45rem, 1.1rem + 1.5vw, 2.1rem);
+  --t-h3: clamp(1.1rem, 1rem + 0.5vw, 1.35rem);
+  --t-lead: clamp(1rem, 0.95rem + 0.3vw, 1.15rem);
+  --t-body: 1rem;
+  --t-sm: 0.875rem;
+  --t-xs: 0.78rem;
+  --t-micro: 0.7rem;
+
+  /* --- Space -------------------------------------------------------------- */
+  --s-1: 0.25rem;
+  --s-2: 0.5rem;
+  --s-3: 0.75rem;
+  --s-4: 1rem;
+  --s-5: 1.5rem;
+  --s-6: 2rem;
+  --s-7: 3rem;
+  --s-8: 4.5rem;
+  --s-9: 7rem;
+
+  --gutter: clamp(1rem, 0.5rem + 2vw, 2.5rem);
+  --measure: 66ch;
+  --shell: 1320px;
+
+  /* --- Shape --------------------------------------------------------------
+     Restrained. Paper has square corners; only controls round. */
+  --r-1: 3px;
+  --r-2: 6px;
+  --r-3: 10px;
+  --r-4: 14px;
+  --r-5: 20px;
+  --r-pill: 999px;
+
+  /* --- Elevation ----------------------------------------------------------
+     Shadows read as a sheet lifting off a desk: tight, warm, low opacity. */
+  --shadow-1: 0 1px 2px rgb(60 45 25 / 0.07);
+  --shadow-2: 0 2px 8px -2px rgb(60 45 25 / 0.12);
+  --shadow-3: 0 12px 32px -12px rgb(60 45 25 / 0.22);
+  --shadow-page: 0 1px 3px rgb(60 45 25 / 0.16), 0 12px 28px -14px rgb(60 45 25 / 0.28);
+
+  /* --- Motion -------------------------------------------------------------
+     Short and purposeful. Anything above 400ms is a page turn or nothing. */
+  --ease-out: cubic-bezier(0.22, 1, 0.36, 1);
+  --ease-in-out: cubic-bezier(0.65, 0, 0.35, 1);
+  --ease-page: cubic-bezier(0.32, 0.72, 0, 1);
+  --d-1: 100ms;
+  --d-2: 180ms;
+  --d-3: 260ms;
+  --d-4: 380ms;
+
+  --focus-ring: 3px solid var(--accent);
+  --focus-offset: 2px;
+}
+
+/* --- Night reading ---------------------------------------------------------
+   Warm dark, not blue-black: the page stays the brightest object, the room
+   goes dark around it.                                                       */
+:root[data-theme="dark"] {
+  color-scheme: dark;
+
+  --canvas: #14110d;
+  --surface: #1c1814;
+  --surface-2: #241f1a;
+  --surface-3: #2e2822;
+
+  --line: #3a332b;
+  --line-soft: #2b251f;
+  --line-strong: #554b3f;
+
+  --text: #f0e9dd;
+  --text-1: #ddd3c3;
+  --text-2: #b6a996;
+  --text-3: #9a8d79;
+
+  --accent: #e0a352;
+  --accent-ink: #1a1206;
+  --accent-soft: #3a2c16;
+  --accent-line: #8a6a35;
+
+  --bind: #c9a077;
+
+  --ok: #6cc08d;
+  --warn: #e0b055;
+  --bad: #e58a76;
+
+  --shadow-1: 0 1px 2px rgb(0 0 0 / 0.5);
+  --shadow-2: 0 2px 10px -2px rgb(0 0 0 / 0.6);
+  --shadow-3: 0 14px 36px -14px rgb(0 0 0 / 0.72);
+  --shadow-page: 0 2px 6px rgb(0 0 0 / 0.6), 0 18px 40px -18px rgb(0 0 0 / 0.8);
+}
+
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]):not([data-theme="dark"]) {
+    color-scheme: dark;
+    --canvas: #14110d;
+    --surface: #1c1814;
+    --surface-2: #241f1a;
+    --surface-3: #2e2822;
+    --line: #3a332b;
+    --line-soft: #2b251f;
+    --line-strong: #554b3f;
+    --text: #f0e9dd;
+    --text-1: #ddd3c3;
+    --text-2: #b6a996;
+    --text-3: #9a8d79;
+    --accent: #e0a352;
+    --accent-ink: #1a1206;
+    --accent-soft: #3a2c16;
+    --accent-line: #8a6a35;
+    --bind: #c9a077;
+    --ok: #6cc08d;
+    --warn: #e0b055;
+    --bad: #e58a76;
+    --shadow-1: 0 1px 2px rgb(0 0 0 / 0.5);
+    --shadow-2: 0 2px 10px -2px rgb(0 0 0 / 0.6);
+    --shadow-3: 0 14px 36px -14px rgb(0 0 0 / 0.72);
+    --shadow-page: 0 2px 6px rgb(0 0 0 / 0.6), 0 18px 40px -18px rgb(0 0 0 / 0.8);
+  }
+}
+
+/* Aliases kept so the surfaces not yet rebuilt keep rendering. */
+:root {
+  --lime: var(--accent);
+  --violet: var(--bind);
+  --coral: var(--bad);
+  --cyan: var(--ok);
+  --amber: var(--mark-amber);
+  --accent-2: var(--bind);
+  --accent-2-ink: #ffffff;
+  --wash-lime: var(--accent-soft);
+  --wash-violet: var(--surface-3);
+  --wash-coral: color-mix(in oklab, var(--bad) 12%, transparent);
+  --wash-cyan: color-mix(in oklab, var(--ok) 12%, transparent);
+  --glow-accent: 0 0 0 1px var(--accent-line);
+  --ease-spring: cubic-bezier(0.34, 1.4, 0.64, 1);
+  --font-display: var(--font-serif);
+  --font-body: var(--font-sans);
+  --focus: var(--focus-ring);
+  --ink-000: #14110d;
+  --ink-100: var(--surface-2);
+  --ink-150: var(--surface-3);
+  --ink-300: var(--line);
+  --ink-400: var(--line-strong);
+  --r-pill: 999px;
+}

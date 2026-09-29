@@ -1,0 +1,36 @@
+﻿.DS_Store
+Thumbs.db
+
+# Downloaded textbooks: ~31 GB (DO NOT COMMIT)
+*.pdf
+**/*.pdf
+ReDesign/books/2024/
+ReDesign/books/2025/
+ReDesign/books/2026/
+ReDesign/books/**/*.pdf
+books/2024/
+books/2025/
+books/2026/
+ReDesign/books/failed.json
+
+# Temp & python cache
+__pycache__/
+*.pyc
+*.tmp*
+*.tmp.*
+
+# QA / Crawl scrapings
+chrome-qa*/
+.chrome-qa*/
+crawl/
+qa/
+class1_matches.txt
+nested_content_links.json
+nested_links_wave1.json
+nested_links_wave2.json
+nested_new_wave2.txt
+nested_new_wave3.txt
+sitemap_raw.html
+
+# Local Editor / Agent settings
+.claude/
