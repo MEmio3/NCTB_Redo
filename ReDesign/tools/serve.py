@@ -98,6 +98,13 @@ class Handler(http.server.SimpleHTTPRequestHandler):
             return
         super().do_GET()
 
+    def do_HEAD(self):
+        parsed = urlparse(self.path)
+        if parsed.path.rstrip("/").endswith("/api/drive"):
+            self.proxy(parse_qs(parsed.query))
+            return
+        super().do_HEAD()
+
     def upstream_for(self, query):
         """?id= a Drive file, or ?u= an allow-listed mirror. Never anything else."""
         file_id = query.get("id", [""])[0]
