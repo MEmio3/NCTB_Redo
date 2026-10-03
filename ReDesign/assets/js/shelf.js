@@ -12,7 +12,7 @@
 
 import { $, $$, esc, fmt, debounce, reduceMotion, bindTheme } from './core.js';
 import { coverURL, bestLink, readerHref, loadLocalIndex, localCopy, localCoverURL,
-         yearOrigin } from './sources.js';
+         yearOrigin, isGovUrl } from './sources.js';
 import { listDocs } from './store.js';
 
 const PAGE = 48;
@@ -147,6 +147,8 @@ function bookCard(b, i) {
   if (b.year) meta.push(`<span>${b.year}</span>`);
   if (b.level) meta.push(`<span>${esc(LEVEL[b.level] || b.level)}</span>`);
   if (b.version === 'english') meta.push('<span class="en">English</span>');
+  const hasGov = (b.links || []).some((l) => l.source === 'egov' || (l.url && isGovUrl(l.url)));
+  if (hasGov) meta.push('<span class="chip-gov" title="Official Government Cloud Mirror Available">Gov Mirror</span>');
 
   // Held in books/ by the fetcher: opens instantly, offline, no Google.
   const ref = {

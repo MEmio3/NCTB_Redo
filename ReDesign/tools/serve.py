@@ -54,6 +54,16 @@ CORS = {
 }
 
 
+def is_allowed_mirror(hostname):
+    if not hostname:
+        return False
+    if hostname in MIRRORS:
+        return True
+    if hostname == "gov.bd" or hostname.endswith(".gov.bd"):
+        return True
+    return False
+
+
 class Handler(http.server.SimpleHTTPRequestHandler):
     protocol_version = "HTTP/1.1"
 
@@ -98,7 +108,7 @@ class Handler(http.server.SimpleHTTPRequestHandler):
         u = query.get("u", [""])[0]
         if u:
             parts = urlparse(u)
-            if parts.scheme == "https" and parts.hostname in MIRRORS:
+            if parts.scheme == "https" and is_allowed_mirror(parts.hostname):
                 return u
         return None
 

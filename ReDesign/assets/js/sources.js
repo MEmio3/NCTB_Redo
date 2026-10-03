@@ -128,6 +128,12 @@ export function streamURL(link) {
 export const isDriveLink = (link) =>
   Boolean(link && link.source === 'drive' && link.fileId);
 
+export const isGovUrl = (url) =>
+  Boolean(url && (/drive\.egovcloud\.gov\.bd|\.gov\.bd|oraclecloud15\.com/i.test(url)));
+
+export const isGovLink = (link) =>
+  Boolean(link && (link.source === 'egov' || isGovUrl(link.url)));
+
 /**
  * Pick the link a title should open with. Object Storage first — it is
  * NCTB's own host and needs no redirect — then Drive, then anything else.
@@ -164,26 +170,29 @@ export const CAPABILITY = {
 /**
  * Build a reader deep-link for a title.
  *
- * `alts` carries every *other* file NCTB lists for this same book — the
- * government mirror, and any sibling Drive copy. Google rate-limits its
- * popular files outright ("Too many users have viewed or downloaded this file
- * recently") and answers HTML instead of the PDF, so a single link is a single
- * point of failure. Handing the reader the alternates turns that from "this
- * book will not open" into a retry it can make on its own.
- *
- * Encoded compactly as `d:<driveId>` / `u:<url>` joined by `|`, capped at
- * three so the address bar stays sane.
+ * Exposes driveId, gov mirror URL, and any alternates so the reader
+ * can try:
+ *   1) Google Drive
+ *   2) Government Mirror (eGov Cloud)
+ *   3) Downloaded copy in books/ (last resort)
  */
 export function readerHref({ path, label, link, links = [] }) {
   const p = new URLSearchParams();
-  if (link?.source === 'drive' && link.fileId) p.set('drive', link.fileId);
-  else if (link?.url) p.set('url', link.url);
+  const driveLink = links.find((l) => l.source === 'drive' && l.fileId) || (link?.source === 'drive' && link.fileId ? link : null);
+  const govLink = links.find((l) => l.source === 'egov' || (l.url && isGovUrl(l.url))) || (link && isGovUrl(link.url) ? link : null);
+
+  if (driveLink?.fileId) p.set('drive', driveLink.fileId);
+  if (govLink?.url) p.set('gov', govLink.url);
+
+  if (!driveLink && !govLink && link?.url) {
+    p.set('url', link.url);
+  }
 
   const alts = links
-    .filter((l) => l !== link)
+    .filter((l) => l !== driveLink && l !== govLink)
     .map((l) => {
       if (l.source === 'drive' && l.fileId) return `d:${l.fileId}`;
-      if (l.source === 'egov' || l.source === 'oracle') return `u:${l.url}`;
+      if (l.url) return `u:${l.url}`;
       return null;
     })
     .filter(Boolean)
@@ -205,9 +214,8 @@ let localStats = null;
 /**
  * Load books/manifest.json, written by tools/fetch_books.py.
  *
- * A downloaded book is served straight off this origin: no Google, no rate
- * limit, no wait. Absent manifest simply means nobody has run the fetcher,
- * which is the normal case — so a miss is silent.
+ * A downloaded book is kept on this disk as a last-resort backup if both
+ * Drive and the government mirror cannot be reached.
  */
 export async function loadLocalIndex() {
   if (localIndex) return localIndex;
@@ -218,11 +226,12 @@ export async function loadLocalIndex() {
     localIndex = new Map();
     localStats = data.byYear || {};
     for (const row of data.books || []) {
-      // Indexed by every handle the site might hold: the Drive id it links by,
-      // and each mirror URL, so a book found via any route resolves locally.
-      const held = { file: row.file, cover: row.cover || null };
+      const held = { file: row.file, cover: row.cover || null, urls: row.urls || [] };
       if (row.driveId) localIndex.set(`drive:${row.driveId}`, held);
-      for (const u of row.urls || []) localIndex.set(u, held);
+      for (const u of row.urls || []) {
+        localIndex.set(u, held);
+        localIndex.set(egovDownloadURL(u), held);
+      }
       if (row.source) localIndex.set(row.source, held);
     }
   } catch {
@@ -237,11 +246,6 @@ const bookPath = (file) =>
 /**
  * How completely a given year is held on this origin.
  *
- * The fetcher is run per year, so a year is either almost entirely downloaded
- * or barely touched — there is no meaningful middle. `held / listed` therefore
- * separates the two cleanly, and stray singles picked up during testing do not
- * make a year claim to be offline when it is not.
- *
  * @param {number} year
  * @param {number} listed how many books the catalogue lists for that year
  * @returns {'local'|'remote'} where its books will actually come from
@@ -252,26 +256,55 @@ export function yearOrigin(year, listed) {
   return held / listed >= 0.9 ? 'local' : 'remote';
 }
 
-const heldRow = ({ driveId, url } = {}) => {
+const heldRow = ({ driveId, url, gov } = {}) => {
   if (!localIndex) return null;
-  return (driveId && localIndex.get(`drive:${driveId}`)) || (url && localIndex.get(url)) || null;
+  return (driveId && localIndex.get(`drive:${driveId}`))
+      || (gov && localIndex.get(gov))
+      || (gov && localIndex.get(egovDownloadURL(gov)))
+      || (url && localIndex.get(url))
+      || (url && localIndex.get(egovDownloadURL(url)))
+      || null;
 };
 
-/** Path to a downloaded copy of this book, if one exists. */
+/** Path to a downloaded copy of this book, if one exists (used as last resort). */
 export function localCopy(ref) {
   const row = heldRow(ref);
   return row ? bookPath(row.file) : null;
 }
 
 /**
- * Cover art rendered from page one of the downloaded book.
- *
- * Google's thumbnail endpoint is rate-limited like everything else on Drive,
- * and a limited id returns nothing at all — which is why popular books showed a
- * blank tile even though the PDF itself was sitting on this disk. When we hold
- * the book we hold its cover, so this is preferred and Drive is the fallback,
- * exactly the order used for the books themselves.
+ * Resolve an associated government mirror URL for a given book reference
+ * using alts or local index catalog metadata.
  */
+export function findGovUrl({ driveId, url, alts } = {}) {
+  if (alts) {
+    for (const token of String(alts).split('|')) {
+      if (token.startsWith('u:')) {
+        const u = token.slice(2);
+        if (isGovUrl(u)) return u;
+      }
+    }
+  }
+  if (localIndex) {
+    if (driveId) {
+      const row = localIndex.get(`drive:${driveId}`);
+      if (row?.urls) {
+        const g = row.urls.find(isGovUrl);
+        if (g) return g;
+      }
+    }
+    if (url) {
+      const row = localIndex.get(url);
+      if (row?.urls) {
+        const g = row.urls.find(isGovUrl);
+        if (g) return g;
+      }
+    }
+  }
+  return null;
+}
+
+/** Cover art rendered from page one of the downloaded book. */
 export function localCoverURL(ref) {
   const row = heldRow(ref);
   return row?.cover ? bookPath(row.cover) : null;
@@ -279,6 +312,7 @@ export function localCoverURL(ref) {
 
 /** Turn one encoded alternate back into a URL the reader can stream. */
 export function altURL(token) {
+  if (!token) return null;
   if (token.startsWith('d:')) {
     return `./api/drive?id=${encodeURIComponent(token.slice(2))}`;
   }
@@ -292,6 +326,8 @@ export function altURL(token) {
  * returns bytes, so normalise before relaying or the proxy fetches HTML.
  */
 export function mirrorURL(url) {
-  const target = /drive\.egovcloud\.gov\.bd/i.test(url) ? egovDownloadURL(url) : url;
+  if (!url) return null;
+  if (url.startsWith('./api/drive') || url.startsWith('/api/drive')) return url;
+  const target = egovDownloadURL(url);
   return `./api/drive?u=${encodeURIComponent(target)}`;
 }

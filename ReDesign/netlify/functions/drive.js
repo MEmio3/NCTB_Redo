@@ -39,6 +39,13 @@ const CORS = {
   'Access-Control-Max-Age': '86400',
 };
 
+function isAllowedMirror(hostname) {
+  if (!hostname) return false;
+  if (MIRRORS.includes(hostname)) return true;
+  if (hostname === 'gov.bd' || hostname.endsWith('.gov.bd')) return true;
+  return false;
+}
+
 /** Resolve the query into an upstream URL, or null if it is not allowed. */
 function upstreamFor(params) {
   const id = params.get('id');
@@ -51,7 +58,7 @@ function upstreamFor(params) {
   if (u) {
     try {
       const url = new URL(u);
-      if (url.protocol === 'https:' && MIRRORS.includes(url.hostname)) return url.toString();
+      if (url.protocol === 'https:' && isAllowedMirror(url.hostname)) return url.toString();
     } catch { /* malformed */ }
   }
   return null;

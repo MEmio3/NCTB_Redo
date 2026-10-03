@@ -19,7 +19,7 @@
    ========================================================================== */
 
 import { $, $$, esc, debounce, toast, reduceMotion, bindTheme } from './core.js';
-import { previewURL, driveDownloadURL, altURL, loadLocalIndex, localCopy } from './sources.js';
+import { previewURL, driveDownloadURL, altURL, loadLocalIndex, localCopy, isGovUrl, findGovUrl, mirrorURL } from './sources.js';
 import { getBridge, setBridge, bridgeActive, driveStreamURL, driveCandidates, testBridge, detectAuto } from './bridge.js';
 import { createAnnotator, paintMarks, PALETTE } from './annotate.js';
 import { curlPage } from './curl.js';
@@ -123,8 +123,9 @@ const bytes = (n) =>
 function intent() {
   const p = new URLSearchParams(location.search);
   return {
-    docId: p.get('doc'), drive: p.get('drive'), url: p.get('url'),
+    docId: p.get('doc'), drive: p.get('drive'), gov: p.get('gov'), url: p.get('url'),
     alts: p.get('alts'), title: p.get('title'), from: p.get('from'),
+    prefer: p.get('prefer') || p.get('source') || p.get('src'),
   };
 }
 
@@ -137,14 +138,11 @@ async function boot() {
   bindDragDrop();
   bindKeys();
 
-  // A downloaded copy beats every network route, so know about it first.
+  // Load the local archive index for last-resort fallback.
   await loadLocalIndex();
 
-  // Probing /api/drive costs a round trip to Google. Skip it entirely when the
-  // book is already on disk — which, once the archive is filled, is the normal
-  // case and the whole reason for keeping one.
-  const haveLocally = Boolean(localCopy({ driveId: want.drive, url: want.url }));
-  if (!haveLocally) {
+  // Probing /api/drive verifies the bundled server endpoint for Drive & Gov proxying.
+  if (want.drive || want.gov || want.url || !want.docId) {
     if (want.drive) await detectAuto(); else detectAuto();
   }
   await renderStorage();
@@ -154,22 +152,43 @@ async function boot() {
     if (doc) return openKnown(doc);
     toast('That book is no longer in this browser', 'bad');
   }
+
+  const govUrl = want.gov || (want.url && isGovUrl(want.url) ? want.url : null) || findGovUrl(want);
+
   if (want.drive) {
     const id = `drive:${want.drive}`;
     const existing = await store.getDoc(id);
     return openKnown(await store.putDoc({
       id, driveId: want.drive,
+      url: want.url || existing?.url || null,
+      govUrl: govUrl || existing?.govUrl || null,
       title: want.title || existing?.title || 'Book',
       origin: 'drive', sourcePath: want.from || existing?.sourcePath || null,
       alts: want.alts || existing?.alts || null,
+      prefer: want.prefer || existing?.prefer || null,
+    }));
+  }
+  if (govUrl) {
+    const id = `gov:${govUrl}`;
+    const existing = await store.getDoc(id);
+    return openKnown(await store.putDoc({
+      id, govUrl,
+      url: want.url || existing?.url || govUrl,
+      title: want.title || existing?.title || 'Book',
+      origin: 'gov', sourcePath: want.from || existing?.sourcePath || null,
+      alts: want.alts || existing?.alts || null,
+      prefer: 'gov',
     }));
   }
   if (want.url) {
+    const isGov = isGovUrl(want.url);
     const id = await store.docId({ url: want.url });
     return openKnown(await store.putDoc({
       id, url: want.url,
+      govUrl: isGov ? want.url : null,
       title: want.title || decodeURIComponent(want.url.split('/').pop() || 'Document'),
-      origin: 'url', sourcePath: want.from || null,
+      origin: isGov ? 'gov' : 'url',
+      sourcePath: want.from || null,
       alts: want.alts || null,
     }));
   }
@@ -183,31 +202,89 @@ async function openKnown(doc) {
   setTitle(doc.title, '');
 
   const cached = await store.getFile(doc.id);
-  if (cached) return openBytes(await cached.arrayBuffer(), doc, { cache: false });
+  if (cached) return openBytes(await cached.arrayBuffer(), doc, { cache: false, source: 'cache' });
 
-  // Try every route this deployment might have before giving up on reading it
-  // properly. Drive's own viewer is a last resort — it cannot be annotated and
-  // it refuses files over its own preview limit.
-  const urls = [];
+  // Priority Hierarchy:
+  //   1) Google Drive (verified via Drive API / proxy / bundled /api/drive)
+  //   2) Government Mirror / Gov Link (e.g. drive.egovcloud.gov.bd via /api/drive?u=...)
+  //   3) Other network mirrors
+  //   4) Local downloaded copy in books/ (LAST RESORT)
 
-  // books/ is filled by tools/fetch_books.py. When the book is already on this
-  // machine it opens instantly, offline, with no Google involved at all.
-  const local = localCopy({ driveId: doc.driveId, url: doc.url });
-  if (local) urls.push(local);
+  const driveUrls = doc.driveId ? driveCandidates(doc.driveId) : [];
 
-  urls.push(...(doc.driveId ? driveCandidates(doc.driveId) : (doc.url ? [doc.url] : [])));
-  // Every other file NCTB lists for this same book: the government mirror and
-  // any sibling Drive copy. Google rate-limits popular files, so one link on
-  // its own is a single point of failure.
-  (doc.alts || '').split('|').filter(Boolean)
-    .map(altURL).filter(Boolean)
-    .forEach((u) => urls.push(u));
+  // Gather Gov link candidates
+  const govCandidates = [];
+  const directGov = doc.govUrl || (doc.url && isGovUrl(doc.url) ? doc.url : null) || findGovUrl(doc);
+  if (directGov && !govCandidates.includes(directGov)) govCandidates.push(directGov);
 
-  for (const url of urls) {
-    if (await openStream(url, doc)) return;
+  (doc.alts || '').split('|').filter(Boolean).forEach((token) => {
+    if (token.startsWith('u:')) {
+      const u = token.slice(2);
+      if (isGovUrl(u) && !govCandidates.includes(u)) govCandidates.push(u);
+    }
+  });
+
+  const govUrls = govCandidates.map(mirrorURL).filter(Boolean);
+
+  // Other remaining network alternates
+  const otherUrls = [];
+  (doc.alts || '').split('|').filter(Boolean).forEach((token) => {
+    const u = altURL(token);
+    if (u && !govUrls.includes(u) && !driveUrls.includes(u)) {
+      otherUrls.push(u);
+    }
+  });
+  if (doc.url && !isGovUrl(doc.url) && !doc.driveId && !otherUrls.includes(doc.url)) {
+    otherUrls.push(doc.url);
   }
-  // Distinguish "this server cannot serve Drive at all" from "this one book
-  // would not open" — they need completely different things from the reader.
+
+  // Local downloaded archive (books/) - LAST RESORT
+  const local = localCopy({ driveId: doc.driveId, url: doc.url, gov: directGov });
+
+  // Allow explicit verification/testing of Gov mirror via ?prefer=gov or ?source=gov
+  const preferGov = doc.prefer === 'gov' || (!doc.driveId && govUrls.length > 0);
+
+  if (preferGov) {
+    // 1. Government Mirror First
+    for (const url of govUrls) {
+      console.log('[reader] Connecting to Government mirror:', url);
+      if (await openStream(url, doc, 'gov')) return;
+    }
+    // 2. Google Drive
+    for (const url of driveUrls) {
+      console.log('[reader] Connecting to Google Drive:', url);
+      if (await openStream(url, doc, 'drive')) return;
+    }
+  } else {
+    // 1. Google Drive First
+    for (const url of driveUrls) {
+      console.log('[reader] Connecting to Google Drive:', url);
+      if (await openStream(url, doc, 'drive')) return;
+    }
+    // 2. Government Mirror Fallback
+    if (govUrls.length > 0) {
+      console.warn('[reader] Google Drive unavailable or inaccessible. Falling back to Government mirror...');
+      toast('Drive unavailable. Connecting to Government mirror…', 'warn', 3000);
+      for (const url of govUrls) {
+        console.log('[reader] Connecting to Government mirror:', url);
+        if (await openStream(url, doc, 'gov')) return;
+      }
+    }
+  }
+
+  // Other remaining network alternates
+  for (const url of otherUrls) {
+    if (await openStream(url, doc, 'network')) return;
+  }
+
+  // 3. LAST RESORT: Local downloaded copy
+  if (local) {
+    console.warn('[reader] Network sources unavailable. Falling back to downloaded file (last resort):', local);
+    toast('Network sources unavailable. Opening downloaded copy…', 'ok', 3000);
+    if (await openStream(local, doc, 'local')) return;
+  }
+
+  // Distinguish "this server cannot serve Drive at all" from "this one book would not open"
   if (doc.driveId) return openPreview(doc, bridgeActive() ? 'failed' : 'no-endpoint');
 
   setMode('empty');
@@ -224,7 +301,7 @@ async function openKnown(doc) {
  * pull the remainder in the background costs bandwidth once and makes turning
  * instant, which is the whole point of a reader.
  */
-async function openStream(url, doc) {
+async function openStream(url, doc, sourceTag = 'network') {
   loading('Opening…');
   let settled = false;
   try {
@@ -242,11 +319,21 @@ async function openStream(url, doc) {
 
     const pdf = await task.promise;
     settled = true;
+    app.source = sourceTag;
+    const sourceLabel = {
+      gov: 'Government Mirror (eGov Cloud)',
+      drive: 'Google Drive',
+      local: 'Downloaded Copy (Offline)',
+      network: 'External Mirror',
+    }[sourceTag] || '';
+    app.sourceLabel = sourceLabel;
     await attachPdf(pdf, doc);
+    if (sourceLabel) setTitle(doc.title, sourceLabel);
+    console.log(`[reader] Book opened successfully from: ${sourceLabel || sourceTag} (${url})`);
     return true;
   } catch (err) {
     settled = true;
-    console.warn('[reader] stream failed:', err);
+    console.warn(`[reader] stream failed for [${sourceTag}] ${url}:`, err);
     loading(null);
     return false;
   }
@@ -1059,6 +1146,7 @@ async function renderStorage() {
     const cached = await store.hasFile(app.doc.id);
     dl.innerHTML = `
       <dt>Title</dt><dd>${esc(app.doc.title || '—')}</dd>
+      <dt>Source</dt><dd>${esc(app.sourceLabel || (app.source ? app.source : (cached ? 'Saved Offline' : 'Network Stream')))}</dd>
       <dt>Pages</dt><dd>${app.doc.pageCount || '—'}</dd>
       <dt>Marks</dt><dd>${app.marks.length}</dd>
       <dt>File</dt><dd>${cached ? 'kept on this device' : 'streaming as you read'}</dd>`;
