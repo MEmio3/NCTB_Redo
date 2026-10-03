@@ -287,6 +287,17 @@ class Skip(Exception):
 
 def on_disk_facts(path: str, out_dir: str) -> dict:
     """Size and mtime for a file we did not just download."""
+    if not os.path.exists(path):
+        folder = os.path.splitext(path)[0]
+        if os.path.isdir(folder):
+            total_bytes = sum(os.path.getsize(os.path.join(folder, f))
+                              for f in os.listdir(folder) if os.path.isfile(os.path.join(folder, f)))
+            return {
+                "file": rel(folder, out_dir),
+                "bytes": total_bytes,
+                "downloadedAt": time.strftime("%Y-%m-%dT%H:%M:%S",
+                                              time.localtime(os.path.getmtime(folder))),
+            }
     return {
         "file": rel(path, out_dir),
         "bytes": os.path.getsize(path),
@@ -296,6 +307,14 @@ def on_disk_facts(path: str, out_dir: str) -> dict:
 
 
 def sha256_of(path: str) -> str:
+    if not os.path.exists(path):
+        folder = os.path.splitext(path)[0]
+        if os.path.isdir(folder):
+            pdfs = [os.path.join(folder, f) for f in os.listdir(folder) if f.lower().endswith(".pdf")]
+            if pdfs:
+                path = pdfs[0]
+            else:
+                return ""
     h = hashlib.sha256()
     with open(path, "rb") as fh:
         for chunk in iter(lambda: fh.read(1 << 20), b""):
@@ -735,7 +754,8 @@ def write_manifest(out_dir: str, entries: list[dict]) -> None:
         try:
             with open(target, encoding="utf-8") as fh:
                 for row in json.load(fh).get("books", []):
-                    merged[row["file"]] = row
+                    if os.path.exists(os.path.join(out_dir, row["file"].replace("/", os.sep))):
+                        merged[row["file"]] = row
         except Exception:                                # noqa: BLE001
             pass
     for row in entries:
