@@ -230,6 +230,27 @@ def classify_page(title):
     }
 
 
+def decode_content(enc):
+    """Decode rt-renderer encoded-content, handling multi-part semicolon chunking."""
+    enc = html.unescape(enc).strip()
+    if not enc:
+        return ""
+    chunks = enc.split(';')
+    parts = []
+    for c in chunks:
+        c = c.strip()
+        if not c:
+            continue
+        pad = len(c) % 4
+        if pad:
+            c += '=' * (4 - pad)
+        try:
+            parts.append(base64.b64decode(c))
+        except Exception:
+            pass
+    return b"".join(parts).decode("utf-8", errors="replace")
+
+
 def load_titles():
     titles = {}
     with open(os.path.join(ROOT, "nested_routes_catalog.json"), encoding="utf-8") as fh:
@@ -270,12 +291,8 @@ def main():
         raw = open(src, encoding="utf-8", errors="replace").read()
         items = []
         for enc in ENCODED_RE.findall(raw):
-            enc = html.unescape(enc).strip()
-            if not enc:
-                continue
-            try:
-                doc = base64.b64decode(enc).decode("utf-8", errors="replace")
-            except Exception:
+            doc = decode_content(enc)
+            if not doc:
                 continue
             items.extend(extract_items(doc))
         if not items:

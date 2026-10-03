@@ -16,6 +16,7 @@
   { method: 'GET', path: '/views/info-officers', type: 'HTML', title: 'Information officers', contract: 'InfoOfficersViewWidget', live: true },
   { method: 'GET', path: '/pages/static-pages/695b97ffc4774958d7b70329', type: 'HTML', title: '2026 textbooks', contract: 'ContentViewerWidget + nested routes', live: true },
   { method: 'GET', path: '/pages/static-pages/695b9b7cc4774958d7b70a12', type: 'HTML', title: 'Primary textbook level', contract: 'ContentViewerWidget child links', live: true },
+  { method: 'GET', path: '/pages/static-pages/695b99afc4774958d7b70612', type: 'HTML', title: '2026 Secondary (Class 9-10) textbooks', contract: 'ContentViewerWidget (chunked Base64) with Google Drive & eGovCloud mirrors', live: true },
   { method: 'GET', path: '/pages/files/6922da22933eb65569e02aab', type: 'FILE', title: 'Regulations viewer', contract: 'HTML viewer with direct PDF URL', live: true },
   { method: 'GET', path: '/pages/organograms/6922d921933eb65569dfcead', type: 'HTML', title: 'Organogram', contract: 'ContentViewerWidget HTML', live: true },
   { method: 'GET', path: '/pages/web-forms/6922d3c481fc96cef9e9c017', type: 'HTML', title: 'Citizen feedback form', contract: 'Public web form HTML', live: true },

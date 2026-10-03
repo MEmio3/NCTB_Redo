@@ -840,19 +840,49 @@ The NCTB site links to these external government/international services:
 
 `encoded-content` is the real body HTML, **base64-encoded**. A plain `fetch()` + `querySelectorAll('a')` — or any scraper that doesn't know this — sees `<rt-renderer>` as an opaque, childless element and concludes the page has no body and no links. That is exactly what happened on `/pages/static-pages/695b9adec4774958d7b708cd` ("2026 academic year, Class 1, primary-level textbooks"): it *looks* empty by every naive check, but decoding `encoded-content` reveals a full table of book names with real Google Drive / `drive.egovcloud.gov.bd` download links.
 
-### 16.2 The fix — decode before you extract
+### 16.2 The fix — decode before you extract (including semicolon chunking)
+
+> [!IMPORTANT]
+> **Chunked Base64 Format**: For larger pages (especially Secondary Class 9–10 and high-enrollment textbook tables exceeding ~15KB), the NCTB portal splits the payload into **semicolon-separated chunks**:
+> `<rt-renderer encoded-content="CHUNK1;CHUNK2;CHUNK3..."></rt-renderer>`
+> A standard single `base64.b64decode()` call will stop at the first `;`, silently truncating the page and dropping rows (e.g., Physics, Chemistry, Biology). You **must** split on `;` and decode each chunk.
 
 ```javascript
-// In a browser / any JS runtime with atob():
+// In a browser / any JS runtime:
+function decodeRtContent(encodedContentAttr) {
+  return (encodedContentAttr || '')
+    .split(';')
+    .map(c => c.trim())
+    .filter(Boolean)
+    .map(c => decodeURIComponent(escape(atob(c))))
+    .join('');
+}
 const el = document.querySelector('rt-renderer');
-const html = decodeURIComponent(escape(atob(el.getAttribute('encoded-content'))));
-// html is now ordinary markup — parse it and pull <a href> as usual.
+const html = decodeRtContent(el.getAttribute('encoded-content'));
 ```
 
 ```python
-# Server-side / no atob():
-import base64
-html = base64.b64decode(encoded_content_attr).decode('utf-8')
+# Server-side (Python):
+import base64, html
+
+def decode_rt_content(encoded_content_attr):
+    enc = html.unescape(encoded_content_attr or "").strip()
+    if not enc:
+        return ""
+    chunks = enc.split(';')
+    parts = []
+    for c in chunks:
+        c = c.strip()
+        if not c:
+            continue
+        pad = len(c) % 4
+        if pad:
+            c += '=' * (4 - pad)
+        try:
+            parts.append(base64.b64decode(c))
+        except Exception:
+            pass
+    return b"".join(parts).decode('utf-8', errors='replace')
 ```
 
 A page can contain more than one `<rt-renderer>` (e.g. `ContentViewerWidget` plus a nested widget); decode and scan all of them.
@@ -861,7 +891,7 @@ A page can contain more than one `<rt-renderer>` (e.g. `ContentViewerWidget` plu
 
 The 355-page recursive catalog in **[Appendix F](#appendix-f-complete-nested-static-page--file-catalog-355-routes)** (`nested_routes_catalog.json`) *did* correctly decode `encoded-content` to discover nested `/pages/static-pages/{id}` links — that part worked. What it explicitly did **not** do (per its own Discovery Contract, step 3: "Extract every returned `/pages/static-pages/{objectid}` link") was capture any other link type found inside that decoded HTML — meaning every external download link (Google Drive, `drive.egovcloud.gov.bd`, Oracle Object Storage PDFs) on all 355 pages was silently discarded. That is the gap the user found when a book-download attempt against this catalog turned up nothing.
 
-**This has now been corrected — see [Appendix G](#appendix-g-real-content-links-post-decode-extraction) for the full re-extraction (260 of 355 pages carry real external links; 3,092 links total) and the actual Class 1 textbook download links.**
+**This has now been corrected — see [Appendix G](#appendix-g-real-content-links-post-decode-extraction) for the full re-extraction (335 of 355 pages carry real external links; 6,153 links total, including all dual Google Drive + `drive.egovcloud.gov.bd` download mirrors).**
 
 ---
 
@@ -1690,17 +1720,17 @@ _No child pages._
 
 **Crawl performed:** 2026-08-15, re-visiting all 355 pages from [Appendix F](#appendix-f-complete-nested-static-page--file-catalog-355-routes), this time decoding every `<rt-renderer encoded-content="...">` block per §16 and extracting every `<a href>` found inside — not just `/pages/static-pages/` links.
 
-**Result:** 260 of 355 pages (73%) carry real external content links; the other 95 are genuinely empty/unpublished bodies (confirmed by decoding, not assumed from a plain-HTML check). **3,092 total links extracted.**
+**Result:** 335 of 355 pages (94%) carry real external content links (with multi-chunk Base64 support properly decoding larger tables). **6,153 total links extracted.**
 
 ### G.1 Link-type breakdown
 
 | Host | Count | What it is |
 |---|---:|---|
-| `drive.google.com` | 2,599 | Book/document PDFs hosted on Google Drive (the primary distribution channel) |
-| `drive.egovcloud.gov.bd` | 410 | Mirror/secondary download links on the government's own eGov cloud |
-| `objectstorage.ap-dcc-gazipur-1.oraclecloud15.com` | 49 | Direct PDF/DOCX links on NCTB's own Oracle Object Storage bucket (`V2Ministry`) |
+| `drive.google.com` | 4,861 | Book/document PDFs hosted on Google Drive (the primary distribution channel) |
+| `drive.egovcloud.gov.bd` | 911 | Mirror/secondary download links on the government's own eGov cloud (2025–2026 books) |
+| `objectstorage.ap-dcc-gazipur-1.oraclecloud15.com` | 54 | Direct PDF/DOCX links on NCTB's own Oracle Object Storage bucket (`V2Ministry`) |
 | `docs.google.com` | 20 | Google Docs–hosted documents (teacher guides) |
-| `nctb.gov.bd` (relative, internal) | 7 | In-body links to other NCTB pages (e.g. a linked notice) |
+| `nctb.gov.bd` (relative, internal) | 8 | In-body links to other NCTB pages (e.g. a linked notice) |
 | `mof.gov.bd` | 1 | Cross-referenced page on the Ministry of Finance's own NPF site |
 | Editor placeholders (`#`) | 4 | Empty/unlinked "Download" buttons left blank by the content editor — not usable |
 
@@ -1936,7 +1966,73 @@ This is the exact data the original “can you download the Class 1 book via API
 | English for Today | [1](http://drive.google.com/file/d/1fEi4o-cRb-uIuXb0YllOylOLwPKg9003/view?usp=drive_link)<br>[2](https://drive.egovcloud.gov.bd/index.php/s/fSMOWCSv3zSH5pd) |
 | প্রাথমিক গণিত | [1](http://drive.google.com/file/d/1sQ9gxdNIKpsBwvbCfOV0Ek6Xmjw90W9B/view?usp=drive_link)<br>[2](https://drive.egovcloud.gov.bd/index.php/s/2ve9vfhXZVLtrBg)<br>[3](http://drive.google.com/file/d/1N6kaGOYkITwR65sKfMBE3JtX9eLgFBSC/view?usp=drive_link)<br>[4](https://drive.egovcloud.gov.bd/index.php/s/w4flCoTsV5CMPk3) |
 
-### G.3 Full catalog — machine-readable file
+### G.3 Class 9–10 (Secondary) Textbooks — 2026 Academic Year (Dual Mirrors)
+
+Every subject from the 2026 Secondary curriculum, with both **Google Drive (ডাউনলোড লিংক-১)** and **eGovCloud (ডাউনলোড লিংক-২)**:
+
+**২০২৬ শিক্ষাবর্ষের মাধ্যমিক স্তরের নবম-দশম শ্রেণির পাঠ্যপুস্তক** — `/pages/static-pages/695b99afc4774958d7b70612`
+
+| Subject | Download link(s) |
+|---|---|
+| বাংলা সাহিত্য | [Drive](https://drive.google.com/file/d/1yjdxHcyFeQLBKLD8tykuqGABh_CaCXIn/view?usp=drive_link)<br>[eGov](https://drive.egovcloud.gov.bd/index.php/s/bspYlB4Rwd4VFUM) |
+| বাংলা সহপাঠ | [Drive](https://drive.google.com/file/d/1NqVcm3tt4olBGRPqi_tVksF__yknMNL8/view?usp=drive_link)<br>[eGov](https://drive.egovcloud.gov.bd/index.php/s/DJ6TEuMohVdTuht) |
+| বাংলা ভাষার ব্যাকরণ ও নির্মিতি | [Drive](https://drive.google.com/file/d/1yqoG73PYj6F8xlB-WTNfGSUk9Yf1z_tR/view?usp=drive_link)<br>[eGov](https://drive.egovcloud.gov.bd/index.php/s/z7CNJUJAw9UuPv5) |
+| English For Today | [Drive](https://drive.google.com/file/d/119HUFSrDZ9GrG_cLGAgVVzM4XMPkA_1g/view?usp=drive_link)<br>[eGov](https://drive.egovcloud.gov.bd/index.php/s/CobRtJNoc1ISrGv) |
+| English Grammar and Composition | [Drive](https://drive.google.com/file/d/1bcIWidHEPsNpwx4Q9EXHdCbFA6HBQWbr/view?usp=drive_link)<br>[eGov](https://drive.egovcloud.gov.bd/index.php/s/6cNd5kYL7lbK62r) |
+| গণিত | [Drive](https://drive.google.com/file/d/1-Dj-9Y1Q79AWN7fViMR8fj4jvzDVNYYl/view?usp=drive_link)<br>[eGov](https://drive.egovcloud.gov.bd/index.php/s/HwrCrAtDhb9K484) |
+| Mathematics | [Drive](https://drive.google.com/file/d/1QkznFQZy71k2xylde15XouVNxa-hVgKc/view?usp=drive_link)<br>[eGov](https://drive.egovcloud.gov.bd/index.php/s/xRY6S1rHN20EoMR) |
+| তথ্য ও যোগাযোগ প্রযুক্তি | [Drive](https://drive.google.com/file/d/1jgAhqSmR6zXZzcSr0fpkWbcw3_07pPGe/view?usp=drive_link)<br>[eGov](https://drive.egovcloud.gov.bd/index.php/s/PjriLZ5LTTdrkDc) |
+| Information And Communication Technology | [Drive](https://drive.google.com/file/d/1qMc0X8jBaazNGRdENW_4RQrNFsiO3NRt/view?usp=drive_link)<br>[eGov](https://drive.egovcloud.gov.bd/index.php/s/UF5VFOfPGxsIYFg) |
+| বিজ্ঞান | [Drive](https://drive.google.com/file/d/1AYg7uY_WjVYJmoskhb0-D58iFPvgwmpJ/view?usp=drive_link)<br>[eGov](https://drive.egovcloud.gov.bd/index.php/s/NupFtnqI21e6svU) |
+| Science | [Drive](https://drive.google.com/file/d/1TCyuezoQIAUCGYLUzDKJIb448kg0_7cQ/view?usp=drive_link)<br>[eGov](https://drive.egovcloud.gov.bd/index.php/s/N3ZlCv0rSQ0LqmF) |
+| পদার্থবিজ্ঞান | [Drive](https://drive.google.com/file/d/13P5E08HcNbpALj8-aC-RUCy0d3iwodet/view?usp=drive_link)<br>[eGov](https://drive.egovcloud.gov.bd/index.php/s/KOdI1T0gyhPiFRz) |
+| Physics | [Drive](https://drive.google.com/file/d/1PCiSEy9n4euVypxciw2-HVyaJvuF4H9t/view?usp=drive_link)<br>[eGov](https://drive.egovcloud.gov.bd/index.php/s/IFbKj1wuaOQgoSP) |
+| রসায়ন | [Drive](https://drive.google.com/file/d/1lbgge3uWpQmuHOBvlxJ4AuPP2Na1RYQ8/view?usp=drive_link)<br>[eGov](https://drive.egovcloud.gov.bd/index.php/s/sDHVsdQgt7dVQzO) |
+| Chemistry | [Drive](https://drive.google.com/file/d/1AEDinOTW1vjqL2cRJC8pZBST9ABqO5RB/view?usp=drive_link)<br>[eGov](https://drive.egovcloud.gov.bd/index.php/s/NKhK1DeslyIovOV) |
+| জীববিজ্ঞান | [Drive](https://drive.google.com/file/d/11WRMSWpqi4KtgxClDCBXely2XdiAhoju/view?usp=drive_link)<br>[eGov](https://drive.egovcloud.gov.bd/index.php/s/MCyVlYL9pnrc5gy) |
+| Biology | [Drive](https://drive.google.com/file/d/1z4jj_JyB3rbWyPXfWEsfkozFnlIlVv-I/view?usp=drive_link)<br>[eGov](https://drive.egovcloud.gov.bd/index.php/s/o5DpxuZF9Pt1qjU) |
+| উচ্চতর গণিত | [Drive](https://drive.google.com/file/d/18osCGwa0nHp-q3XgkjEFcoBqteORdiXE/view?usp=drive_link)<br>[eGov](https://drive.egovcloud.gov.bd/index.php/s/iSz6xhjfGbQnu4G) |
+| Higher Mathematics | [Drive](https://drive.google.com/file/d/1-SER_5f6ePTJUSHUeyiU2-GkfRFFGtmJ/view?usp=drive_link)<br>[eGov](https://drive.egovcloud.gov.bd/index.php/s/OlfWblTouy8ntja) |
+| ভূগোল ও পরিবেশ | [Drive](https://drive.google.com/file/d/1IBxZA_tZ8Ayhcm0s7IAOXaju0iFt2Xsc/view?usp=drive_link)<br>[eGov](https://drive.egovcloud.gov.bd/index.php/s/4KF6LH72lUYwYBB) |
+| Geography and Environment | [Drive](https://drive.google.com/file/d/19IEFm5j95N_KRAKDDKSun5REhDKts-HO/view?usp=drive_link)<br>[eGov](https://drive.egovcloud.gov.bd/index.php/s/QXXoymQmD6JAeTg) |
+| অর্থনীতি | [Drive](https://drive.google.com/file/d/1pr8PKw5S_eBcmwzBMmIzmsuqfjTX0iTo/view?usp=drive_link)<br>[eGov](https://drive.egovcloud.gov.bd/index.php/s/1IRiTMSIe5NfWHt) |
+| Economics | [Drive](https://drive.google.com/file/d/10c4HmrEcHcAebfZRerjAU2NfkJszDlKf/view?usp=drive_link)<br>[eGov](https://drive.egovcloud.gov.bd/index.php/s/OH8lYfwTxtL6HUN) |
+| কৃষিশিক্ষা | [Drive](https://drive.google.com/file/d/1vcbOBJYqqH9RrWM7q1FTSAWkFwhrhSwj/view?usp=drive_link)<br>[eGov](https://drive.egovcloud.gov.bd/index.php/s/WlPU0WZt9GuN5mR) |
+| Agriculture Studies | [Drive](https://drive.google.com/file/d/1ACj_VNapZbjfhStSpuYNP60SYld2cZRj/view?usp=drive_link)<br>[eGov](https://drive.egovcloud.gov.bd/index.php/s/TAPpHdby4IcF8f6) |
+| গার্হস্থ্যবিজ্ঞান | [Drive](https://drive.google.com/file/d/1RaKjS79_GO6mP3nZ8fLTyqFa5s5fBdMm/view?usp=drive_link)<br>[eGov](https://drive.egovcloud.gov.bd/index.php/s/aEU87jLhPFgokSM) |
+| Home Science | [Drive](https://drive.google.com/file/d/1gsAbMAsKErRxpP4gim9_6MWy8EerLUUJ/view?usp=drive_link)<br>[eGov](https://drive.egovcloud.gov.bd/index.php/s/TO8hmdbFamQk8rJ) |
+| পৌরনীতি ও নাগরিকতা | [Drive](https://drive.google.com/file/d/1h5OQIDlC4TuOQjbaqlTVXa7QKUhAAAla/view?usp=drive_link)<br>[eGov](https://drive.egovcloud.gov.bd/index.php/s/SqDKm7Un96QkeFB) |
+| Civics and Citizenship | [Drive](https://drive.google.com/file/d/1xYHmmx3jC3MoFlwerj4AIskSSbnR92wP/view?usp=drive_link)<br>[eGov](https://drive.egovcloud.gov.bd/index.php/s/NX4KpPJ2SbVt4Sk) |
+| হিসাববিজ্ঞান | [Drive](https://drive.google.com/file/d/1rdxqp5pbj4L_YOARjByJQm4YH8WhYm-D/view?usp=drive_link)<br>[eGov](https://drive.egovcloud.gov.bd/index.php/s/IxTLwFRfjGP6AO4) |
+| Accounting | [Drive](https://drive.google.com/file/d/1tUK9KCFk1sOcYj2eXo6uUtmTDNJQOgle/view?usp=drive_link)<br>[eGov](https://drive.egovcloud.gov.bd/index.php/s/QC62y2VoHFWojGF) |
+| ফিন্যান্স ও ব্যাংকিং | [Drive](https://drive.google.com/file/d/1mTSzCxZWjbmGZQWaiwV6y0Y170pwrNDD/view?usp=drive_link)<br>[eGov](https://drive.egovcloud.gov.bd/index.php/s/hMQenv7qpYI7A9k) |
+| Finance and Banking | [Drive](https://drive.google.com/file/d/1hBS2yCf8DcsVvmkTFBy6deo9iHggX-G-/view?usp=drive_link)<br>[eGov](https://drive.egovcloud.gov.bd/index.php/s/f8CmqYoBCAHhm74) |
+| ব্যবসায় উদ্যোগ | [Drive](https://drive.google.com/file/d/1eR_R_nf_GGgeDvRPiSeZa35o1gOtSO-3/view?usp=drive_link)<br>[eGov](https://drive.egovcloud.gov.bd/index.php/s/ZSSo3l4WrIIuMZW) |
+| Business Entrepreneurship | [Drive](https://drive.google.com/file/d/1uW_mv260C02yvPaUsapyZN6WfudlneAk/view?usp=drive_link)<br>[eGov](https://drive.egovcloud.gov.bd/index.php/s/Izu5Ew0RPaCSQ9M) |
+| ইসলাম শিক্ষা | [Drive](https://drive.google.com/file/d/1-2tcr1JJFEB56yOlVhqRpssKJOIaXNM6/view?usp=drive_link)<br>[eGov](https://drive.egovcloud.gov.bd/index.php/s/P4DQEn2UadaVBjS) |
+| Islamic Studies | [Drive](https://drive.google.com/file/d/1JVQUQJZX1tt0OzzsVskD33dGVR82BIOs/view?usp=drive_link)<br>[eGov](https://drive.egovcloud.gov.bd/index.php/s/75QERgTC2GAu4Gl) |
+| হিন্দুধর্ম শিক্ষা | [Drive](https://drive.google.com/file/d/1hoqjWrhNdcWEcOmzX5x9-g9Zeav85RTl/view?usp=drive_link)<br>[eGov](https://drive.egovcloud.gov.bd/index.php/s/GegidKtMYGxrD08) |
+| Hindu Religion Studies | [Drive](https://drive.google.com/file/d/1sewXn9WEXs7IbyXS1xwg3q4IqUlqJR_R/view?usp=drive_link)<br>[eGov](https://drive.egovcloud.gov.bd/index.php/s/3TGn89AHrS9y8xT) |
+| বৌদ্ধধর্ম শিক্ষা | [Drive](https://drive.google.com/file/d/16414iujNW-t1KgfPQ-6DP_JD96jmMNFy/view?usp=drive_link)<br>[eGov](https://drive.egovcloud.gov.bd/index.php/s/Fl8XtU8s05CV4Xp) |
+| Buddhist Religion Studies | [Drive](https://drive.google.com/file/d/1MLmMuLmZgbYHrtqEFdqVXftoT5AFODL1/view?usp=drive_link)<br>[eGov](https://drive.egovcloud.gov.bd/index.php/s/eKjaLxyQjAIH7Oo) |
+| খ্রীষ্টধর্ম শিক্ষা | [Drive](https://drive.google.com/file/d/1wOP30jDvxRi1OlerfLcOkLLLzfUXsjhl/view?usp=drive_link)<br>[eGov](https://drive.egovcloud.gov.bd/index.php/s/U23mxNCkIksJgdh) |
+| Christian Religion Studies | [Drive](https://drive.google.com/file/d/1ggNoHPa4IYdFa1WjaayWk0k6Qe38xoUs/view?usp=drive_link)<br>[eGov](https://drive.egovcloud.gov.bd/index.php/s/nbmH1AFmBBux7Wg) |
+| ক্যারিয়ার শিক্ষা | [Drive](https://drive.google.com/file/d/1EuhyBut1DVTgv-gn0AdLxMtb8RWE4veB/view?usp=drive_link)<br>[eGov](https://drive.egovcloud.gov.bd/index.php/s/BbG1MTVu3u4ZHa8) |
+| Career Education | [Drive](https://drive.google.com/file/d/1pC4sSiUfFUAl47mcP-wvg8_AL3exYz8s/view?usp=drive_link)<br>[eGov](https://drive.egovcloud.gov.bd/index.php/s/AECEYMJzojt5BQd) |
+| বাংলাদেশ ও বিশ্বপরিচয় | [Drive](https://drive.google.com/file/d/1y8nVlBXO8JA7yCVka_kaf2xFQZl5alS2/view?usp=drive_link)<br>[eGov](https://drive.egovcloud.gov.bd/index.php/s/beRqNxgYNDPUhUL) |
+| Bangladesh And Global Studies | [Drive](https://drive.google.com/file/d/1qT-5d2cuSiMoHyfPa6wN6r0ljaFH9oih/view?usp=drive_link)<br>[eGov](https://drive.egovcloud.gov.bd/index.php/s/HDqdndokBTWP0IJ) |
+| চারু ও কারুকলা | [Drive](https://drive.google.com/file/d/1vfgAb9Zu5LKTbv2PNN8ZzW-NU8Pdv0Ob/view?usp=drive_link)<br>[eGov](https://drive.egovcloud.gov.bd/index.php/s/kfTOv4FVmvrUlLC) |
+| Arts and Crafts | [Drive](https://drive.google.com/file/d/1kkfoPs8oZkm1T58iYFr5HGH2AeZngHd_/view?usp=drive_link)<br>[eGov](https://drive.egovcloud.gov.bd/index.php/s/ksKueOpbywI60sR) |
+| বাংলাদেশের ইতিহাস ও বিশ্বসভ্যতা | [Drive](https://drive.google.com/file/d/1fIva2037ZxRmu3kZRgRevoWt18yBo_22/view?usp=drive_link)<br>[eGov](https://drive.egovcloud.gov.bd/index.php/s/VHN7XYl6J4N6fUy) |
+| History of Bangladesh and World Civilization | [Drive](https://drive.google.com/file/d/1wBq52vcGNEYirC1UlqyxoMXgJRx9TPoa/view?usp=drive_link)<br>[eGov](https://drive.egovcloud.gov.bd/index.php/s/SGAdFc4XqQodUUY) |
+| শারীরিক শিক্ষা, স্বাস্থ্যবিজ্ঞান ও খেলাধুলা | [Drive](https://drive.google.com/file/d/1AjugtP-ryP2EP1dFYvZpxePwoKRx_1g_/view?usp=drive_link)<br>[eGov](https://drive.egovcloud.gov.bd/index.php/s/jTHGfZtNd1cMYng) |
+| Physical Education, Health Science and Sports | [Drive](https://drive.google.com/file/d/14sWZ1nksPOXiuinfz5chpM5TGfHbxfjf/view?usp=drive_link)<br>[eGov](https://drive.egovcloud.gov.bd/index.php/s/6KuNXvTwWcb1GNe) |
+| আরবি | [Drive](https://drive.google.com/file/d/1F6dVVhNwBnC7KUU90D2PvdjOaCp-SBcP/view?usp=drive_link)<br>[eGov](https://drive.egovcloud.gov.bd/index.php/s/0v8bCt3jzChsHjp) |
+| সংস্কৃত | [Drive](https://drive.google.com/file/d/1cSuXq6Rb7jznSTKFfBz1itT5W_GHs0NZ/view?usp=drive_link)<br>[eGov](https://drive.egovcloud.gov.bd/index.php/s/ZxVzQJFjzUrdID6) |
+| পালি | [Drive](https://drive.google.com/file/d/1tCjLZUpzv3wKJPP8KCQlvgLOeKhJpcLQ/view?usp=drive_link)<br>[eGov](https://drive.egovcloud.gov.bd/index.php/s/CU1Qb8KtLq2B2nd) |
+| সংগীত | [Drive](https://drive.google.com/file/d/1DUXoGjckESSMz-DDLhMX2H8x8pXv6cfj/view?usp=drive_link)<br>[eGov](https://drive.egovcloud.gov.bd/index.php/s/J59kxcDvR2Op2yH) |
+
+### G.4 Full catalog — machine-readable file
 
 The complete extraction (all 260 pages with links, all 3,092 links, deduplicated per page in file order) is stored in **`nested_content_links.json`**, an array of `{"path": "...", "links": [...]}` objects keyed by the same paths used in `nested_routes_catalog.json` (Appendix F) — join on `path` to get title + links + hierarchy position for any page in one place.
 
@@ -1951,7 +2047,7 @@ Representative sample (non–Class 1 pages, to show the range of what §16's dec
 | `/pages/static-pages/6922df64933eb65569e21ab2` | Application/appeal forms | 14 |
 | `/pages/static-pages/6922de84933eb65569e1b39f` | Important documents | 5 (includes a cross-site link to `mof.gov.bd`) |
 
-### G.4 What this means for downloading a book "via API"
+### G.5 What this means for downloading a book "via API"
 
 There is no dedicated books/textbooks JSON API. The working procedure is:
 
