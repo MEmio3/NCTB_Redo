@@ -864,19 +864,9 @@
 .recent-list a { flex: 1; min-width: 0; font-family: var(--font-bn); font-size: var(--t-sm); font-weight: 600; }
 .recent-list small { color: var(--text-3); font-size: var(--t-xs); white-space: nowrap; font-variant-numeric: tabular-nums; }
 
-.preview { position: absolute; inset: 0; display: flex; flex-direction: column; z-index: 8; background: var(--canvas); }
-.preview-note {
-  display: flex; flex-wrap: wrap; align-items: center; gap: var(--s-4);
-  padding: var(--s-3) var(--s-4);
-  background: var(--accent-soft);
-  border-bottom: 1px solid var(--accent-line);
-  font-family: var(--font-bn);
-  font-size: var(--t-xs);
-  line-height: 1.7;
-  color: var(--text-1);
-}
-.preview-note > div:first-child { flex: 1; min-width: 15rem; }
-.preview-note code {
+.unavailable-why { display: grid; gap: var(--s-3); }
+.unavailable-why p { font-size: var(--t-sm); }
+.unavailable-why code {
   padding: 0.1em 0.4em;
   border-radius: var(--r-1);
   background: color-mix(in oklab, var(--ink-900) 10%, transparent);
@@ -884,8 +874,6 @@
   font-size: 0.92em;
   white-space: nowrap;
 }
-.preview-actions { display: flex; gap: var(--s-2); flex-wrap: wrap; }
-#preview-frame { flex: 1; width: 100%; border: 0; background: var(--surface-2); }
 
 .loading {
   position: absolute;

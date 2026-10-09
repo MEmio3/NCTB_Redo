@@ -14,13 +14,14 @@
    mount every page and let the scroller move.
 
    Sources, in order: bytes cached in IndexedDB, a stream over HTTP range
-   requests, or a file the reader hands us. Drive needs the bundled
-   /api/drive endpoint (see bridge.js) and falls back to its own viewer.
+   requests, or a file the reader hands us. The Government mirror is tried
+   before Drive; both need the bundled /api/drive endpoint (see bridge.js),
+   and Drive books fall back to Drive's own viewer without it.
    ========================================================================== */
 
 import { $, $$, esc, debounce, toast, reduceMotion, bindTheme } from './core.js';
-import { previewURL, driveDownloadURL, altURL, loadLocalIndex, localCopy, isGovUrl, findGovUrl, mirrorURL } from './sources.js';
-import { getBridge, setBridge, bridgeActive, driveStreamURL, driveCandidates, testBridge, detectAuto } from './bridge.js';
+import { driveDownloadURL, egovDownloadURL, altURL, loadLocalIndex, localCopy, isGovUrl, findGovUrl, mirrorURL } from './sources.js';
+import { getBridge, setBridge, bridgeActive, driveStreamURL, driveCandidates, testBridge, detectAuto, redetectAuto } from './bridge.js';
 import { createAnnotator, paintMarks, PALETTE } from './annotate.js';
 import { curlPage } from './curl.js';
 import * as store from './store.js';
@@ -72,14 +73,14 @@ const app = {
 function setMode(mode) {
   document.body.dataset.mode = mode;
   $('#landing').hidden = mode !== 'empty';
-  $('#preview-mode').hidden = mode !== 'preview';
+  $('#unavailable').hidden = mode !== 'unavailable';
   $('#bottombar').hidden = !SHOW_BOTTOM_BAR || mode !== 'doc';
   $('#deck').hidden = mode !== 'doc';
   $$('.turn').forEach((t) => { t.hidden = mode !== 'doc'; });
 
-  // View modes, fullscreen and the rail's page list only mean anything when we
-  // are rendering the PDF ourselves. In Drive's viewer they are dead controls,
-  // so hide them rather than leave buttons that visibly do nothing.
+  // View modes, fullscreen and the rail's page list only mean anything once a
+  // PDF is rendered. Without one they are dead controls, so hide them rather
+  // than leave buttons that visibly do nothing.
   const own = mode === 'doc';
   $('#view-modes').hidden = !own;
   $('#fit-cycle').hidden = !own;
@@ -205,10 +206,15 @@ async function openKnown(doc) {
   if (cached) return openBytes(await cached.arrayBuffer(), doc, { cache: false, source: 'cache' });
 
   // Priority Hierarchy:
-  //   1) Google Drive (verified via Drive API / proxy / bundled /api/drive)
-  //   2) Government Mirror / Gov Link (e.g. drive.egovcloud.gov.bd via /api/drive?u=...)
+  //   1) Government Mirror (drive.egovcloud.gov.bd via /api/drive?u=...).
+  //      Drive caps how often a file may be viewed and then refuses it with
+  //      "too many users have viewed or downloaded this file" — and NCTB's
+  //      books are among the most-viewed files there. eGov has no such quota,
+  //      and its WebDAV route streams by range, so it goes first.
+  //   2) Google Drive (Drive API / proxy / bundled /api/drive)
   //   3) Other network mirrors
   //   4) Local downloaded copy in books/ (LAST RESORT)
+  //   `?prefer=drive` swaps 1 and 2.
 
   const driveUrls = doc.driveId ? driveCandidates(doc.driveId) : [];
 
@@ -241,35 +247,32 @@ async function openKnown(doc) {
   // Local downloaded archive (books/) - LAST RESORT
   const local = localCopy({ driveId: doc.driveId, url: doc.url, gov: directGov });
 
-  // Allow explicit verification/testing of Gov mirror via ?prefer=gov or ?source=gov
-  const preferGov = doc.prefer === 'gov' || (!doc.driveId && govUrls.length > 0);
-
-  if (preferGov) {
-    // 1. Government Mirror First
+  const tryGov = async () => {
     for (const url of govUrls) {
       console.log('[reader] Connecting to Government mirror:', url);
-      if (await openStream(url, doc, 'gov')) return;
+      if (await openStream(url, doc, 'gov')) return true;
     }
-    // 2. Google Drive
+    return false;
+  };
+  const tryDrive = async () => {
     for (const url of driveUrls) {
       console.log('[reader] Connecting to Google Drive:', url);
-      if (await openStream(url, doc, 'drive')) return;
+      if (await openStream(url, doc, 'drive')) return true;
     }
+    return false;
+  };
+
+  if (doc.prefer === 'drive') {
+    if (await tryDrive()) return;
+    if (govUrls.length) toast('Drive unavailable. Connecting to Government mirror…', 'warn', 3000);
+    if (await tryGov()) return;
   } else {
-    // 1. Google Drive First
-    for (const url of driveUrls) {
-      console.log('[reader] Connecting to Google Drive:', url);
-      if (await openStream(url, doc, 'drive')) return;
+    if (await tryGov()) return;
+    if (govUrls.length && driveUrls.length) {
+      console.warn('[reader] Government mirror unavailable. Falling back to Google Drive...');
+      toast('Government mirror unavailable. Trying Google Drive…', 'warn', 3000);
     }
-    // 2. Government Mirror Fallback
-    if (govUrls.length > 0) {
-      console.warn('[reader] Google Drive unavailable or inaccessible. Falling back to Government mirror...');
-      toast('Drive unavailable. Connecting to Government mirror…', 'warn', 3000);
-      for (const url of govUrls) {
-        console.log('[reader] Connecting to Government mirror:', url);
-        if (await openStream(url, doc, 'gov')) return;
-      }
-    }
+    if (await tryDrive()) return;
   }
 
   // Other remaining network alternates
@@ -284,8 +287,12 @@ async function openKnown(doc) {
     if (await openStream(local, doc, 'local')) return;
   }
 
-  // Distinguish "this server cannot serve Drive at all" from "this one book would not open"
-  if (doc.driveId) return openPreview(doc, bridgeActive() ? 'failed' : 'no-endpoint');
+  // Every book is read in this reader, never handed off to Drive's viewer.
+  // Distinguish "this server cannot fetch books at all" from "this one book
+  // would not open", and offer the routes that still end up here.
+  if (doc.driveId || directGov || doc.url) {
+    return openUnavailable(doc, bridgeActive() ? 'failed' : 'no-endpoint', directGov);
+  }
 
   setMode('empty');
   renderRecent();
@@ -339,39 +346,59 @@ async function openStream(url, doc, sourceTag = 'network') {
   }
 }
 
-function openPreview(doc, reason = 'failed') {
+/**
+ * No source would stream. The book is still read here, never in Drive's own
+ * viewer: that iframe had highlighting off, refused Drive's larger files, and
+ * hit the same view quota that usually caused the failure in the first place.
+ * What is left is retrying, or fetching the file and opening it in this
+ * reader — where it is kept, so it opens instantly next time.
+ */
+function openUnavailable(doc, reason = 'failed', govUrl = null) {
   loading(null);
-  setMode('preview');
-  $('#preview-frame').src = previewURL(doc.driveId);
-  $('#preview-download').href = driveDownloadURL(doc.driveId);
-  $('#marks-empty').innerHTML = `
-    <p>Highlighting needs the file.</p>
-    <p class="muted">Use the two buttons above: get the file, then open it here.
-    Your highlights and notes then stay with this book every visit.</p>`;
+  setMode('unavailable');
+  setTitle(doc.title, '');
 
-  // Drive's viewer refuses files past its own preview ceiling and answers with
-  // "too large to preview", which reads as our failure rather than theirs. Be
-  // specific about whose limit this is and what actually fixes it.
-  const note = $('#preview-note-text');
+  // eGov has no view quota, so its download works when Drive's has been
+  // throttled. (Its own viewer is no alternative: X-Frame-Options: SAMEORIGIN.)
+  const href = govUrl ? egovDownloadURL(govUrl)
+    : doc.driveId ? driveDownloadURL(doc.driveId)
+    : doc.url || null;
+  const dl = $('#unavailable-download');
+  dl.hidden = !href;
+  if (href) dl.href = href;
+
+  const why = $('#unavailable-why');
   if (reason === 'no-endpoint') {
-    note.innerHTML = `
-      <b>This server can't open Drive books.</b>
-      It has no <code>/api/drive</code> endpoint, so the book is falling back to
-      Google Drive's viewer — where highlighting is off and Drive refuses its own
-      larger files. Serve the site with <code>python ReDesign/tools/serve.py</code>,
-      or deploy it to Cloudflare Pages, Vercel or Netlify, and books open here
-      properly. The two buttons work either way.`;
+    $('#unavailable-title').textContent = 'This server can’t fetch books';
+    why.innerHTML = `
+      <p>Neither Google Drive nor the Government cloud mirror lets a browser read
+      its files directly, so the reader fetches them through this site's
+      <code>/api/drive</code> relay — and the way the site is being served right
+      now has none.</p>
+      <p>Start it with <code>start.bat</code> (or
+      <code>python ReDesign/tools/serve.py</code>), or deploy it to Cloudflare
+      Pages, Vercel or Netlify. Until then: download the PDF, then open it here.</p>`;
     console.warn(
-      '[reader] No /api/drive on this origin, so Drive books cannot stream.\n'
+      '[reader] No /api/drive on this origin, so neither Drive nor eGov books can stream.\n'
       + 'Run:  python ReDesign/tools/serve.py     (serves the site AND the endpoint)\n'
-      + 'A plain static server — Live Server, python -m http.server — cannot do this,\n'
-      + 'because Google refuses cross-origin reads of Drive files from a browser.');
+      + 'A plain static server — Live Server, python -m http.server — cannot do this:\n'
+      + 'Google refuses cross-origin reads from a browser, and drive.egovcloud.gov.bd\n'
+      + 'sends no Access-Control-Allow-Origin on its downloads.');
   } else {
-    note.innerHTML = `
-      <b>This book wouldn't stream, so it's in Google Drive's viewer.</b>
-      Highlighting is off here, and Drive refuses to preview its larger files at
-      all. Either way the two buttons work: get the file, then open it here.`;
+    $('#unavailable-title').textContent = 'This book couldn’t be loaded';
+    why.innerHTML = `
+      <p>${govUrl ? 'Neither the Government mirror nor Google Drive' : 'The source'}
+      would send it just now. Drive limits how often a popular book can be
+      opened, so it often works again a little later.</p>
+      <p>Or download the PDF and open it here — it opens in this reader with
+      highlighting and notes, and stays in this browser.</p>`;
   }
+}
+
+async function retryOpen() {
+  if (!app.doc) return;
+  await redetectAuto();
+  openKnown(app.doc);
 }
 
 async function openBytes(buffer, doc, { cache = true, name = '', blobType = 'application/pdf' } = {}) {
@@ -1442,7 +1469,8 @@ function bindChrome() {
   /* files */
   $('#open-btn').addEventListener('click', () => $('#file-input').click());
   $('#landing-open').addEventListener('click', () => $('#file-input').click());
-  $('#preview-attach').addEventListener('click', () => $('#file-input').click());
+  $('#unavailable-open').addEventListener('click', () => $('#file-input').click());
+  $('#unavailable-retry').addEventListener('click', retryOpen);
   $('#file-input').addEventListener('change', (e) => { openFile(e.target.files[0]); e.target.value = ''; });
 
   /* rail lists */
@@ -1640,7 +1668,7 @@ function renderBridgeState() {
     ? 'Currently using a Google API key.'
     : cfg.mode === 'proxy' ? `Currently using ${cfg.proxy}`
     : bridgeActive() ? 'This site already serves Drive books itself — nothing to do here.'
-    : 'This site cannot serve Drive books, so they open in Drive’s viewer.';
+    : 'This site cannot fetch books yet — start it with start.bat or deploy it with its /api/drive function.';
 }
 
 function bindBridge() {

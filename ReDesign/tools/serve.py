@@ -15,6 +15,7 @@ shelf. The repository root also holds an older, unrelated `index.html` (the
 and it would look like the site had reverted. Can be run from anywhere.
 """
 
+import base64
 import functools
 import http.server
 import os
@@ -38,6 +39,18 @@ PORT = 8899
 SITE_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 DRIVE = "https://drive.usercontent.google.com/download"
 ID_RE = re.compile(r"^[\w-]{10,100}$")
+PING = b"nctb-relay 1"
+CHUNK = 1 << 16
+
+# eGov cloud is ownCloud 10. Its share-page /download ignores Range and always
+# sends the whole file (40 MB for some books), and no route on it sends
+# access-control-allow-origin on a GET, so a browser cannot read it at all.
+# The same share is exposed over public WebDAV, with the share token as the
+# Basic-auth user, and that route answers ranges with 206. Prefer it; keep
+# /download as the fallback.
+EGOV_SHARE = re.compile(
+    r"^https://drive\.egovcloud\.gov\.bd/(?:index\.php/)?s/([A-Za-z0-9]{8,64})(?:/download)?/?$")
+EGOV_DAV = "https://drive.egovcloud.gov.bd/public.php/webdav/"
 
 # Mirrors we are willing to relay, so this is never an open proxy.
 MIRRORS = {
@@ -119,7 +132,35 @@ class Handler(http.server.SimpleHTTPRequestHandler):
                 return u
         return None
 
+    def open_upstream(self, target, headers):
+        """Open the upstream response. Returns (response, ranged)."""
+        share = EGOV_SHARE.match(target)
+        if share:
+            token = base64.b64encode(f"{share.group(1)}:".encode()).decode()
+            req = urllib.request.Request(
+                EGOV_DAV, method=self.command,
+                headers={**headers, "Authorization": f"Basic {token}"})
+            try:
+                up = urllib.request.urlopen(req, timeout=60)
+                if not up.headers.get("Content-Type", "").startswith("text/html"):
+                    return up, True
+                up.close()
+            except (urllib.error.URLError, OSError):
+                pass                                  # fall back to /download
+        req = urllib.request.Request(target, method=self.command, headers=headers)
+        return urllib.request.urlopen(req, timeout=60), False
+
     def proxy(self, query):
+        if "ping" in query:
+            self.send_response(200)
+            self._cors()
+            self.send_header("Content-Type", "text/plain")
+            self.send_header("Content-Length", str(len(PING)))
+            self.end_headers()
+            if self.command != "HEAD":
+                self.wfile.write(PING)
+            return
+
         target = self.upstream_for(query)
         if not target:
             self.send_error(400, "Bad or missing id/u")
@@ -132,32 +173,52 @@ class Handler(http.server.SimpleHTTPRequestHandler):
         if rng:
             headers["Range"] = rng
 
-        req = urllib.request.Request(target, headers=headers)
         try:
-            with urllib.request.urlopen(req, timeout=60) as up:
-                ctype = up.headers.get("Content-Type", "")
-                # Google answers HTML, not an error status, when a file is
-                # rate-limited ("Too many users have viewed or downloaded this
-                # file recently"). Passing it on would reach pdf.js as a corrupt
-                # PDF, so name it and let the reader try a mirror.
-                if ctype.startswith("text/html"):
-                    self.send_error(502, "Upstream refused: rate-limited or unavailable")
-                    return
-                body = up.read()
-                self.send_response(up.status)
-                self._cors()
-                for h in ("Content-Type", "Content-Range", "Accept-Ranges", "ETag"):
-                    if up.headers.get(h):
-                        self.send_header(h, up.headers[h])
-                if not ctype:
-                    self.send_header("Content-Type", "application/pdf")
-                self.send_header("Content-Length", str(len(body)))
-                self.end_headers()
-                self.wfile.write(body)
+            up, ranged = self.open_upstream(target, headers)
         except urllib.error.HTTPError as err:
             self.send_error(err.code, f"Upstream said {err.code}")
+            return
         except Exception as err:                      # noqa: BLE001
             self.send_error(502, f"Upstream failed: {err}")
+            return
+
+        with up:
+            ctype = up.headers.get("Content-Type", "")
+            # Google answers HTML, not an error status, when a file is
+            # rate-limited ("Too many users have viewed or downloaded this
+            # file recently"). Passing it on would reach pdf.js as a corrupt
+            # PDF, so name it and let the reader try a mirror.
+            if ctype.startswith("text/html"):
+                self.send_error(502, "Upstream refused: rate-limited or unavailable")
+                return
+            self.send_response(up.status)
+            self._cors()
+            for h in ("Content-Type", "Content-Length", "Content-Range", "Accept-Ranges", "ETag"):
+                if up.headers.get(h):
+                    self.send_header(h, up.headers[h])
+            if not ctype:
+                self.send_header("Content-Type", "application/pdf")
+            # ownCloud's WebDAV honours ranges but never says so, and pdf.js
+            # only switches to range requests when it sees this header.
+            if ranged and not up.headers.get("Accept-Ranges"):
+                self.send_header("Accept-Ranges", "bytes")
+            if not up.headers.get("Content-Length"):
+                self.close_connection = True          # body ends at close
+            self.end_headers()
+            if self.command == "HEAD":
+                return
+
+            # Stream rather than buffer: pdf.js opens a book by starting a full
+            # GET, reading the headers, then abandoning it for range requests.
+            # Reading the whole file first made that first look cost 40 MB.
+            try:
+                while True:
+                    block = up.read(CHUNK)
+                    if not block:
+                        break
+                    self.wfile.write(block)
+            except (BrokenPipeError, ConnectionResetError, ConnectionAbortedError):
+                self.close_connection = True          # the reader moved on
 
     def log_message(self, fmt, *args):
         # log_error() passes an HTTPStatus as args[0], not a string, so this

@@ -21,9 +21,27 @@
  *
  * Range requests pass through, which is what lets the reader open page one of
  * a 30 MB textbook without pulling the whole file.
+ *
+ *   ?ping               answers PING, so the reader can tell this endpoint
+ *                       exists without depending on any upstream being up
  */
 
 const DRIVE = 'https://drive.usercontent.google.com/download';
+const PING = 'nctb-relay 1';
+
+// eGov cloud is ownCloud 10. Its share-page `/download` ignores Range and
+// always sends the whole file (40 MB for some books), and no route on it sends
+// `access-control-allow-origin` on a GET, so a browser cannot read it at all.
+// The same share is exposed over public WebDAV, with the share token as the
+// Basic-auth user, and that route answers ranges with 206. Prefer it; keep
+// `/download` as the fallback.
+const EGOV_SHARE = /^https:\/\/drive\.egovcloud\.gov\.bd\/(?:index\.php\/)?s\/([A-Za-z0-9]{8,64})(?:\/download)?\/?$/;
+const EGOV_DAV = 'https://drive.egovcloud.gov.bd/public.php/webdav/';
+
+const egovAuth = (target) => {
+  const m = EGOV_SHARE.exec(target);
+  return m ? `Basic ${btoa(`${m[1]}:`)}` : null;
+};
 
 // Mirrors we are willing to relay, so this can never be an open proxy.
 const MIRRORS = [
@@ -70,7 +88,12 @@ export default async (request) => {
     return new Response('Method not allowed', { status: 405, headers: CORS });
   }
 
-  const target = upstreamFor(new URL(request.url).searchParams);
+  const params = new URL(request.url).searchParams;
+  if (params.has('ping')) {
+    return new Response(PING, { headers: { ...CORS, 'Content-Type': 'text/plain', 'Cache-Control': 'no-store' } });
+  }
+
+  const target = upstreamFor(params);
   if (!target) return new Response('Bad or missing id/u', { status: 400, headers: CORS });
 
   // Forward Range only. Origin, Referer and Sec-Fetch-* are deliberately
@@ -78,12 +101,23 @@ export default async (request) => {
   const headers = new Headers();
   const range = request.headers.get('Range');
   if (range) headers.set('Range', range);
+  const method = request.method === 'HEAD' ? 'HEAD' : 'GET';
 
-  const upstream = await fetch(target, {
-    method: request.method === 'HEAD' ? 'HEAD' : 'GET',
-    headers,
-    redirect: 'follow',
-  });
+  let upstream = null;
+  let ranged = false;
+  const auth = egovAuth(target);
+  if (auth) {
+    const dav = new Headers(headers);
+    dav.set('Authorization', auth);
+    const res = await fetch(EGOV_DAV, { method, headers: dav, redirect: 'follow' });
+    if (res.ok && !(res.headers.get('Content-Type') || '').startsWith('text/html')) {
+      upstream = res;
+      ranged = true;
+    } else {
+      res.body?.cancel();
+    }
+  }
+  upstream ||= await fetch(target, { method, headers, redirect: 'follow' });
 
   // Google answers HTML — not an error status — when a file is rate-limited
   // ("Too many users have viewed or downloaded this file recently"). Passing
@@ -101,6 +135,9 @@ export default async (request) => {
     if (v) out.set(h, v);
   }
   if (!out.has('Content-Type')) out.set('Content-Type', 'application/pdf');
+  // ownCloud's WebDAV honours ranges but never says so, and pdf.js only
+  // switches to range requests when it sees this header.
+  if (ranged) out.set('Accept-Ranges', 'bytes');
   out.set('Cache-Control', 'public, max-age=86400');
 
   return new Response(upstream.body, { status: upstream.status, headers: out });

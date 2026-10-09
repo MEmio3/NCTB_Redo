@@ -165,19 +165,20 @@
       </div>
     </section>
 
-    <!-- Drive fallback -->
-    <section class="preview" id="preview-mode" hidden>
-      <div class="preview-note">
-        <div id="preview-note-text">
-          <b>You can read this book right here.</b>
-          To highlight and take notes you need the file itself — <b>1</b> then <b>2</b>.
-        </div>
-        <div class="preview-actions">
-          <a class="btn btn--primary btn--sm" id="preview-download" href="#" target="_blank" rel="noopener">1 · Get the file</a>
-          <button class="btn btn--sm" type="button" id="preview-attach">2 · Open it here</button>
+    <!-- no source would stream: say why, and keep the book in this reader -->
+    <section class="landing" id="unavailable" hidden>
+      <div class="landing-card">
+        <span class="landing-mark" aria-hidden="true">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.3" stroke-linejoin="round"><path d="M4 5.5h7a3 3 0 0 1 3 3V20H7a3 3 0 0 1-3-3z"/><path d="M20 5.5h-3a3 3 0 0 0-3 3V20h6z"/></svg>
+        </span>
+        <h1 id="unavailable-title">This book couldn't be loaded</h1>
+        <div class="unavailable-why" id="unavailable-why"></div>
+        <div class="landing-actions">
+          <button class="btn btn--primary" type="button" id="unavailable-retry">Try again</button>
+          <a class="btn" id="unavailable-download" href="#" target="_blank" rel="noopener">Download the PDF</a>
+          <button class="btn" type="button" id="unavailable-open">Open the downloaded file</button>
         </div>
       </div>
-      <iframe id="preview-frame" title="Book preview"></iframe>
     </section>
 
     <div class="loading" id="stage-loading" hidden>

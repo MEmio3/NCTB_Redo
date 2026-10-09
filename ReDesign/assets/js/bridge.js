@@ -79,6 +79,13 @@ export async function detectAuto() {
   if (cached !== null) return cached === '1';
 
   autoProbe ||= (async () => {
+    // Ask the endpoint itself first. Probing with a real Drive file made the
+    // answer hostage to Google: when that popular book hit Drive's "too many
+    // viewers" limit, a working relay was reported as missing.
+    try {
+      const res = await fetch(`${AUTO_PATH}?ping=1`, { cache: 'no-store' });
+      if (res.ok && (await res.text()).startsWith('nctb-relay')) return true;
+    } catch { /* fall through to the byte probe, for older deployments */ }
     try {
       const res = await fetch(`${AUTO_PATH}?id=${PROBE_ID}`, { headers: { Range: 'bytes=0-4' } });
       if (!res.ok && res.status !== 206) throw new Error(String(res.status));
@@ -94,6 +101,13 @@ export async function detectAuto() {
   const ok = await autoProbe;
   sessionStorage.setItem(AUTO_KEY, ok ? '1' : '0');
   return ok;
+}
+
+/** Forget the session's answer and probe again — for an explicit retry. */
+export function redetectAuto() {
+  sessionStorage.removeItem(AUTO_KEY);
+  autoProbe = null;
+  return detectAuto();
 }
 
 /** True when Drive books can be read inline, however that was arranged. */

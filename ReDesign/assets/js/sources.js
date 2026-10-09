@@ -28,13 +28,20 @@
              API surface and CORS passes there (a keyless request returns a
              *readable* 403). Seamless Drive streaming is therefore possible,
              but only via the Drive API with a key, or via a proxy — see
-             `bridge.js`. Without one of those, Drive falls back to its own
-             preview iframe plus a one-time file drop.
+             `bridge.js`. Without one of those the reader offers a download
+             plus a one-time file drop — books are never handed to Drive's
+             own viewer.
 
-     egov    drive.egovcloud.gov.bd
+     egov    drive.egovcloud.gov.bd — ownCloud 10.2.1 (re-measured 2026-10-09)
              /download returns a real application/pdf, but with no
-             `access-control-allow-origin`, so fetch() is blocked. Useful as a
-             download link only.
+             `access-control-allow-origin`, so fetch() is blocked. No other
+             route helps: preflights answer `*`, yet every actual GET (share
+             download, public WebDAV) omits the header. Its viewer page sends
+             X-Frame-Options: SAMEORIGIN, so it cannot be framed either.
+             Through the bundled /api/drive relay it is the best source there
+             is: no view quota (unlike Drive), and the relay reads it over
+             public WebDAV (share token as Basic-auth user), which serves
+             byte ranges where /download always sends the whole file.
 
      gdocs   docs.google.com — opens externally.
    ========================================================================== */
@@ -53,14 +60,14 @@ export const SOURCES = {
     tone: 'warn',
     // Only true once a Drive bridge is configured; bridge.js overrides this.
     streamable: false,
-    note: 'Reads inline once a Drive connection is set up; otherwise previews in Drive’s own viewer.',
+    note: 'Reads in the reader through the site’s own relay; otherwise download it and open it there.',
   },
   egov: {
     label: 'eGov cloud',
     short: 'Mirror',
     tone: 'cyan',
     streamable: false,
-    note: 'Government mirror. Downloads directly, but the browser cannot read it into the page.',
+    note: 'Government mirror. Opens in the reader through the site’s own relay; downloads directly either way.',
   },
   gdocs: {
     label: 'Google Docs',
@@ -83,10 +90,6 @@ export const sourceInfo = (key) => SOURCES[key] || SOURCES.other;
 /** Cover thumbnail for a Drive file. Served to <img> without CORS. */
 export const coverURL = (fileId, width = 400) =>
   `https://drive.google.com/thumbnail?id=${encodeURIComponent(fileId)}&sz=w${width}`;
-
-/** Embeddable read-only viewer — the fallback when streaming fails. */
-export const previewURL = (fileId) =>
-  `https://drive.google.com/file/d/${encodeURIComponent(fileId)}/preview`;
 
 /**
  * Where to send a reader who wants the file on their own disk. Fine for a
